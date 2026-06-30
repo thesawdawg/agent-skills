@@ -7,17 +7,45 @@ description: Validate a Dependabot PR's package updates against the current proj
 
 Analyzes a Dependabot PR's dependency changes against the current project to surface breaking changes, deprecated APIs, and compatibility issues before merging.
 
+## Prerequisites: GitHub Authentication
+
+This skill uses the `gh` CLI to interact with GitHub. This works with any token type — GitHub App installation token, fine-grained PAT, or Actions `GITHUB_TOKEN` — making it safe for organization repos where personal PATs are restricted.
+
+Before running, verify auth is configured:
+```bash
+gh auth status
+```
+
+If not authenticated, the user must set `GITHUB_TOKEN` in their environment (or run `gh auth login`). For org repos, the recommended approach is a **GitHub App** installation token:
+1. Create a GitHub App in the org with `Pull requests: read` and `Contents: read` permissions
+2. Install it on the target repo(s)
+3. Generate an installation token and export it: `export GITHUB_TOKEN=<installation-token>`
+
 ## Workflow
 
 Work through these steps in order, tracking each as a task.
 
 ### 1. Identify the PR and Fetch Dependency Changes
 
-If the user provided a PR number or URL, use `mcp__github__pull_request_read` to fetch it. Otherwise ask the user for the PR number.
+Ask the user for the repo (owner/repo) and PR number if not already provided. Then fetch the PR metadata:
 
-Extract the list of updated packages from the PR:
-- Read the PR title and body — Dependabot always lists the package name and version range (e.g. `Bump lodash from 4.17.20 to 4.17.21`)
-- Use `mcp__github__get_file_contents` to read the diff of the lockfile or manifest (e.g. `package.json`, `package-lock.json`, `requirements.txt`, `Pipfile.lock`, `Cargo.toml`, `go.mod`, `pom.xml`, `build.gradle`, `Gemfile.lock`) from the PR branch vs the base branch
+```bash
+gh pr view <PR_NUMBER> --repo <owner/repo> --json title,body,headRefName,baseRefName
+```
+
+Dependabot always states the package and version range in the PR title/body (e.g. `Bump lodash from 4.17.20 to 4.17.21`). Parse these out.
+
+To see the exact manifest/lockfile diff:
+```bash
+gh pr diff <PR_NUMBER> --repo <owner/repo>
+```
+
+Filter the diff to relevant files: `package.json`, `package-lock.json`, `requirements.txt`, `Pipfile.lock`, `Cargo.toml`, `Cargo.lock`, `go.mod`, `go.sum`, `pom.xml`, `build.gradle`, `Gemfile.lock`, `composer.lock`.
+
+To fetch the updated manifest file from the PR branch:
+```bash
+gh api repos/<owner/repo>/contents/<filepath>?ref=<headRefName> --jq '.content' | base64 -d
+```
 
 Build a list of:
 ```
