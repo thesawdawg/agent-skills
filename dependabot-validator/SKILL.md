@@ -9,14 +9,21 @@ Analyzes a Dependabot PR's dependency changes against the current project to sur
 
 ## Prerequisites: GitHub Authentication
 
-This skill uses the `gh` CLI to interact with GitHub. This works with any token type — GitHub App installation token, fine-grained PAT, or Actions `GITHUB_TOKEN` — making it safe for organization repos where personal PATs are restricted.
+This skill runs directly in the project directory and uses:
+- **`git`** (with SSH key auth) for fetching the PR branch and reading diffs
+- **`curl`** against the GitHub REST API for PR metadata (title, body, branch names)
 
-Before running, verify auth is configured:
+The `GITHUB_TOKEN` env var must be set for API calls. For org repos, use a **GitHub App** installation token (recommended) or a fine-grained PAT scoped to `Pull requests: read` and `Contents: read`.
+
 ```bash
-gh auth status
+# Verify SSH key works for git operations
+git ls-remote origin HEAD
+
+# Verify API token is set
+echo $GITHUB_TOKEN | cut -c1-4   # should print first 4 chars, not empty
 ```
 
-If not authenticated, the user must set `GITHUB_TOKEN` in their environment (or run `gh auth login`). For org repos, the recommended approach is a **GitHub App** installation token:
+For org repos, the recommended token approach is a **GitHub App** installation token:
 1. Create a GitHub App in the org with `Pull requests: read` and `Contents: read` permissions
 2. Install it on the target repo(s)
 3. Generate an installation token and export it: `export GITHUB_TOKEN=<installation-token>`
@@ -27,29 +34,44 @@ Work through these steps in order, tracking each as a task.
 
 ### 1. Identify the PR and Fetch Dependency Changes
 
-Ask the user for the repo (owner/repo) and PR number if not already provided. Then fetch the PR metadata:
+Ask the user for the repo (owner/repo) and PR number if not already provided.
 
+Infer the repo from the current git remote if possible:
 ```bash
-gh pr view <PR_NUMBER> --repo <owner/repo> --json title,body,headRefName,baseRefName
+git remote get-url origin
+# e.g. git@github.com:myorg/myrepo.git → owner=myorg, repo=myrepo
 ```
 
-Dependabot always states the package and version range in the PR title/body (e.g. `Bump lodash from 4.17.20 to 4.17.21`). Parse these out.
-
-To see the exact manifest/lockfile diff:
+Fetch PR metadata (title, body, branch names) via the GitHub REST API:
 ```bash
-gh pr diff <PR_NUMBER> --repo <owner/repo>
+curl -sf -H "Authorization: Bearer $GITHUB_TOKEN" \
+  https://api.github.com/repos/<owner>/<repo>/pulls/<PR_NUMBER>
 ```
 
-Filter the diff to relevant files: `package.json`, `package-lock.json`, `requirements.txt`, `Pipfile.lock`, `Cargo.toml`, `Cargo.lock`, `go.mod`, `go.sum`, `pom.xml`, `build.gradle`, `Gemfile.lock`, `composer.lock`.
+Parse `head.ref` (PR branch) and `base.ref` (target branch) from the response.
 
-To fetch the updated manifest file from the PR branch:
+Fetch the PR branch locally and diff the manifest/lockfile changes:
 ```bash
-gh api repos/<owner/repo>/contents/<filepath>?ref=<headRefName> --jq '.content' | base64 -d
+git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
+git diff HEAD..pr-<PR_NUMBER> -- \
+  package.json package-lock.json \
+  requirements.txt Pipfile.lock \
+  Cargo.toml Cargo.lock \
+  go.mod go.sum \
+  pom.xml build.gradle \
+  Gemfile.lock composer.lock
 ```
+
+Dependabot states the package and version range in the PR title/body (e.g. `Bump lodash from 4.17.20 to 4.17.21`). Parse these from the API response body alongside the diff.
 
 Build a list of:
 ```
 { package, ecosystem, from_version, to_version }
+```
+
+Clean up the temporary branch when done:
+```bash
+git branch -D pr-<PR_NUMBER>
 ```
 
 ### 2. Detect the Project Ecosystem
