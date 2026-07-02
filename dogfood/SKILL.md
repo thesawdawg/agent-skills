@@ -12,13 +12,16 @@ This skill drives a real headless Chromium instance via a small bundled Playwrig
 ## Prerequisites
 
 - One-time setup: `cd dogfood/scripts && npm install` (pulls in the `playwright` npm package only — the Chromium *binary* is already pre-installed in this environment and `npm install` will not re-download it).
-- A target URL and testing scope from the user.
+- A target URL and testing scope from the user, or the defaults below if they don't give one.
 
 ## Inputs
 
 The user provides:
-1. **Target URL** — the entry point for testing
-2. **Scope** — what areas/features to focus on (or "full site" for comprehensive testing)
+
+1. **Target URL** — the entry point for testing. If they don't give one, don't just ask an open-ended question — offer concrete options:
+   - Check `package.json` for a `dev`/`start` script and try its declared port, or probe common local defaults in order: `http://localhost:3000`, `http://localhost:5173`, `http://localhost:8080`, `http://localhost:4200`, `http://localhost:5000`, `http://127.0.0.1:8000`. Use the first one that responds.
+   - If none respond, ask the user to pick: **(a)** a local dev server on a different port, **(b)** a staging/preview URL, or **(c)** a public URL — and have them paste it.
+2. **Scope** — what areas/features to focus on. If not given, default to **full site**, starting from the target's base root path (`/`), and say explicitly that's what you're doing rather than silently guessing.
 3. **Output directory** (optional) — where to save screenshots and the report (default: `./dogfood-output`)
 
 ## Workflow
