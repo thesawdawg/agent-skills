@@ -430,19 +430,24 @@ def redact_auth(headers: dict) -> dict:
 - [ ] **Tokens echoed back.** Some APIs include the auth token in error details. Verify they don't.
 - [ ] **Verbose `Server` / `X-Powered-By`.** Stack-info leaks. Note for security review.
 
-## Tool Notes for This Environment
+## Tool Notes (core four tools only)
 
-- **curl / openssl / dig** — run directly via the Bash tool.
+Everything here runs with **Bash** — no harness-specific web or delegation tool is required.
+
+- **curl / openssl / dig** — run directly via Bash.
   ```bash
   curl -sI https://api.example.com
   openssl s_client -connect api.example.com:443 -servername api.example.com </dev/null 2>/dev/null | openssl x509 -noout -dates
   ```
-- **Multi-step Python flows** (auth → fetch → paginate → validate) — write to a scratch `.py` file and run with Bash rather than chaining long inline `-c` strings; keeps token handling out of shell history.
-- **Vendor API docs** — use `WebFetch` on the doc URL instead of guessing at the spec:
+- **Multi-step Python flows** (auth → fetch → paginate → validate) — Write the script to a scratch `.py` file and run it with Bash rather than chaining long inline `-c` strings; keeps token handling out of shell history.
+- **Vendor API docs** — fetch the doc page with `curl` instead of guessing at the spec, then read it:
+  ```bash
+  curl -sSL "https://docs.example.com/api/v1/users" -o /tmp/apidoc.html
+  # then Read /tmp/apidoc.html, or pipe through a text extractor:
+  #   python3 -c "import sys,re,html; t=open('/tmp/apidoc.html').read(); print(re.sub('<[^>]+>',' ',t))" | head -200
   ```
-  WebFetch(url="https://docs.example.com/api/v1/users", prompt="Describe this endpoint's request/response schema")
-  ```
-- **Full CRUD test sweeps across many endpoints** — delegate to the `Agent` tool with the full context inlined (auth scheme, base URL, what to test per endpoint) rather than making the agent re-read this skill file; have it report pass/fail per endpoint plus correlation IDs for failures.
+  If your harness has a richer web-fetch or browser capability, use that instead — but plain `curl` is the portable baseline.
+- **Full CRUD test sweeps across many endpoints** — if your harness supports subagent delegation, hand off the sweep with full context inlined (auth scheme, base URL, what to test per endpoint) and have it report pass/fail + correlation IDs. If not, write the sweep as one `.py` or shell script and run it in a single pass. Either way, don't make the worker re-read this whole skill file.
 
 ## Output Format
 

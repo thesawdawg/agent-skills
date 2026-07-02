@@ -27,7 +27,11 @@ Use this skill when:
 - Consistent quality checks across all tasks
 - Subagents can ask questions before starting work
 
-**In Claude Code specifically:** delegation = the `Agent` tool (`subagent_type: general-purpose` for implementers, `code-reviewer` if available for the quality-review stage); the todo list = `TaskCreate`/`TaskUpdate`/`TaskList`. Everywhere below that says "dispatch a subagent" or "update the todo list," substitute those tools.
+**Harness mappings:**
+- **Claude Code:** delegation = the `Agent` tool (`subagent_type: general-purpose` for implementers, `code-reviewer` if available for the quality-review stage); the todo list = `TaskCreate`/`TaskUpdate`/`TaskList`.
+- **pi (or any core-only harness with just Read/Write/Edit/Bash and no delegation primitive):** there are no subagents — run each "dispatched subagent" as its own **fresh, focused pass** in the main loop, deliberately re-reading only the task spec and the files that pass touches (not the whole conversation). Track the todo list as a checklist in a scratch file (e.g. `./sdd-tasks.md`) that you Edit as tasks complete. The two-stage review still applies: after implementing, re-read the changed files with fresh eyes against the spec, then against quality criteria, before moving on.
+
+Everywhere below that says "dispatch a subagent" or "update the todo list," substitute your harness's equivalent from above.
 
 ## The Process
 

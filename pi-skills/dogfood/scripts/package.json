@@ -1,0 +1,9 @@
+{
+  "name": "dogfood-browser-driver",
+  "private": true,
+  "type": "module",
+  "description": "Persistent headless-Chromium bridge used by the dogfood skill's browser-driver.mjs",
+  "dependencies": {
+    "playwright": "^1.48.0"
+  }
+}

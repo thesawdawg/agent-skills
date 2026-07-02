@@ -1,53 +1,96 @@
 # pi-skills
 
-Skills adapted from other agent-skill collections (currently: [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)'s `optional-skills` tree). This file records the conventions those adaptations follow, so future imports don't have to re-decide the same questions.
+Harness-portable skills, written **pi-first** — for the [pi coding agent](https://github.com/earendil-works/pi) (`@mariozechner/pi-coding-agent`) and any harness whose core is just **Read / Write / Edit / Bash**. They also run under richer harnesses (Claude Code, Codex CLI, Amp, Droid), which have everything pi has plus more.
+
+Some skills here are pi-adapted copies of skills that live at this repo's root (`dogfood`, `dependabot-validator`, `pr-grill-me`); the root copies are left as-is for their original environment. Others are adapted from [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)'s `optional-skills` tree. This file records the conventions all of them follow.
+
+## Design target: the four core tools
+
+pi's core is exactly four tools — **Read, Write, Edit, Bash** — and it self-extends from there. Skills here are written so that a small model, with only those four tools, can execute them start to finish. Concretely that means:
+
+- **Prefer Bash for anything external.** Web fetches use `curl`. "Look up a changelog" uses a registry HTTP API via `curl`, not a search tool. TLS/DNS checks use `curl`/`openssl`/`dig`. This is the portable baseline and it's deterministic.
+- **Name a capability, then give the portable command.** Where a step benefits from a richer capability some harnesses have (viewing an image, delegating to a subagent, a built-in web search), say so — then give the Bash/core-tool fallback that always works. Never make the happy path depend on a tool pi doesn't have.
+- **`Read` is a core tool**, so "read the file with Read" / "open it" is fine everywhere. Only *image* viewing needs a fallback — see below.
+
+### Capability mapping (what to write instead of a Claude-Code tool name)
+
+| Need | Portable instruction to write |
+|---|---|
+| View a screenshot/image | "If your harness can view images, open the PNG; otherwise rely on the text accessibility-tree snapshot and note visual-only issues weren't assessed." |
+| Fetch a web page / doc / changelog | `curl -sSL <url>` (then Read the file). Mention a richer web-fetch/browser as an optional upgrade. |
+| Web search | Avoid it. Hit a known HTTP API instead (npm registry, PyPI JSON, GitHub releases API) via `curl`; fall back to asking the user for a URL. |
+| Delegate to a subagent | "If your harness supports delegation, dispatch a subagent; otherwise run it as a fresh focused pass in the main loop." |
+| Ask the user something | Just ask in chat and wait for the reply. No special tool. |
+| Deliver a file to the user | Give the exact file path in your final message; use a file-delivery capability only if the harness has one. |
+| Track a todo list | Use the harness's task list if it has one; otherwise keep a checklist in a scratch `.md` file you Edit as you go. |
 
 ## Frontmatter
 
-Match the rest of this repo: only `name` and `description` in the YAML frontmatter. Upstream sources sometimes carry extra fields (`version`, `platforms`, `metadata.*`, `triggers`, `toolsets`) — drop them on import. Fold anything in `triggers` that's genuinely useful ("use when...") into the `description` field instead, since that's what this harness actually reads to decide when to load a skill.
+Only `name` and `description` (pi's required fields: `name` ≤64 chars, lowercase/`a-z0-9-`; `description` ≤1024 chars, "what it does and when to use it"). Drop upstream extras (`version`, `platforms`, `metadata.*`, `triggers`, `toolsets`) on import; fold any useful "use when…" text from `triggers` into `description`, since that's what the harness reads to decide when to surface the skill.
 
-## Harness-specific by default
+## Referencing bundled scripts and sibling skills
 
-Skills in this repo are written for the environment they'll actually run in (Claude Code), not for portability across arbitrary agent harnesses. Concrete tool names (`Read`, `Bash`, `WebFetch`, `Agent`, `AskUserQuestion`, `SendUserFile`) are preferred over vague paraphrases ("use an image-viewing capability") — an agent following these instructions gets a specific, actionable step instead of something it has to re-interpret. `dogfood/SKILL.md` set this precedent before `pi-skills` existed, and every skill here follows it.
-
-`subagent-driven-development` is the deliberate exception: it was imported with an explicit ask to keep it usable by other agent harnesses, since delegation/todo-list primitives vary a lot between them. If you want another skill made harness-agnostic, that's a separate decision to make explicitly per-skill, not a default to apply silently — the tradeoff (portability vs. actionability) is real and worth thinking about each time, not templating away.
-
-## Referencing shared scripts and other skills' files
-
-Never assume the shell's current working directory. A skill can be invoked from inside whatever project the user is actually working on, not from inside this repo, and other skills in this repo may `cd` around during their own workflow. Any command that needs a path to a script — this skill's own, or another skill's (e.g. `adversarial-ux-test` and `web-pentest` both reuse `dogfood/scripts/browser-driver.mjs`) — should resolve it from the repo root first:
+Never assume the shell's current working directory: a skill runs from inside the **user's** project, not from where the skill is installed. Resolve bundled files from the skill's own directory. At the top of any script-using workflow, set:
 
 ```bash
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-SOME_SCRIPT="$REPO_ROOT/some-skill/scripts/thing.sh"
+# SKILL_DIR = the directory containing THIS SKILL.md — the path the agent loaded it from.
+SKILL_DIR="/abs/path/to/this/skill"
+node "$SKILL_DIR/scripts/thing.mjs" ...
 ```
 
-Do the same for a skill's own multi-step workflows that create a working directory and might be tempted to `cd` into it: keep the directory as a variable and reference `$THAT_DIR/subpath` throughout instead of changing directories, so nothing in the instructions silently depends on where you happen to be standing when a given step runs.
+Do **not** use `git rev-parse --show-toplevel` to find a skill's files — the skill runs inside the user's repo, so that returns the *wrong* root. For a **sibling skill's** asset (e.g. `adversarial-ux-test` and `web-pentest` reuse `dogfood`'s browser driver), reference it relative to `SKILL_DIR` and check it exists:
 
-Plain prose references to a skill's own same-directory `references/*.md` or `templates/*.md` docs (read via the `Read` tool, not executed) don't need this treatment — resolve those relative to the skill directory the same way every other skill here already does.
+```bash
+DOGFOOD_DRIVER="$SKILL_DIR/../dogfood/scripts/browser-driver.mjs"
+[ -f "$DOGFOOD_DRIVER" ] || echo "install the dogfood skill as a sibling first" >&2
+```
+
+For a skill's own multi-step workflow that creates a working directory, keep it as a variable (`OUT=...`, `ENGAGEMENT=...`) and reference `$VAR/subpath` throughout — do **not** `cd` into it, or later `$VAR/foo` paths silently break.
+
+## Writing steps for small models
+
+- Number the steps. One action per step. State what success looks like ("when `launch` prints `READY`, the browser is up").
+- Give exact, copy-pasteable commands with the variables already defined earlier in the skill — don't leave `{placeholder}` tokens for the model to fill from imagination.
+- Make decision points explicit: "if none respond, ask the user to pick (a)/(b)/(c)."
+- Put mandatory guardrails in their own callouts (e.g. web-pentest's authorization gate) so they can't be skimmed past.
 
 ## Testing expectations
 
-If a skill bundles a script, it should be runnable and checked before it ships, not just read for plausibility:
-
-- Scripts with meaningful logic (parsing, scope enforcement, anything security-relevant) should include a `--selftest` mode or equivalent, covering realistic edge cases — not just the happy path.
-- Run it. A script that "looks right" and a script that's actually been executed against a deliberately awkward input (quotes in a URL, mixed-case hostnames, multiple matches) are different levels of confidence, and only the second one belongs in a merged PR.
+Bundled scripts must be run, not just eyeballed, before shipping:
+- Scripts with real logic (parsing, scope enforcement, anything security-relevant) ship with a `--selftest` mode covering awkward inputs, not just the happy path.
+- Actually execute them against deliberately awkward input (quotes in a URL, mixed-case hostnames, multiple matches, ANSI codes) — that's the difference between "looks right" and "verified."
 
 ## Security expectations
 
-- Anything that looks like a credential (tokens, claim URLs, session cookies) is redacted by default in script output. Require an explicit flag to reveal it, and only request that flag at the one step that actually needs the real value.
-- Skills that touch real network targets (`web-pentest`) keep their authorization/scope guardrails intact on import — tighten them if anything, never loosen them silently during adaptation.
-- This harness compresses/summarizes older parts of long conversations. Skills that produce sensitive output (secrets, exploit payloads) should say so explicitly and prefer writing sensitive values to files with the path mentioned in chat, rather than pasting the values inline.
+- Credential-like output (tokens, claim URLs, session cookies) is redacted by default; revealing it requires an explicit flag used only at the one step that needs the real value.
+- Skills that touch real network targets (`web-pentest`) keep their authorization/scope guardrails intact on adaptation — tighten, never loosen.
+- Skills that produce sensitive output (secrets, exploit payloads) prefer writing values to files and referencing the path, rather than pasting them into chat (some harnesses replay chat history through summarization/compaction).
+
+## Skills in this directory
+
+| Skill | Origin | Notes |
+|---|---|---|
+| `dogfood` | pi-adapted copy of root `../dogfood` | Bundles the Playwright `browser-driver.mjs`; anchor skill the two below depend on. |
+| `dependabot-validator` | pi-adapted copy of root `../dependabot-validator` | Changelog lookups via `curl` to registry APIs instead of a search tool. |
+| `pr-grill-me` | pi-adapted copy of root `../pr-grill-me` | git-only; handles non-GitHub remotes. |
+| `adversarial-ux-test` | hermes-agent `optional-skills/dogfood/adversarial-ux-test` | Reuses the sibling `dogfood` driver. |
+| `rest-graphql-debug` | hermes-agent `optional-skills/software-development/rest-graphql-debug` | Pure `curl` + Python via Bash. |
+| `web-pentest` | hermes-agent `optional-skills/security/web-pentest` | Authorization/scope guardrails; reuses sibling `dogfood` driver. |
+| `cloudflare-temporary-deploy` | hermes-agent `optional-skills/web-development/cloudflare-temporary-deploy` | Redacts claim token by default. |
+| `subagent-driven-development` | hermes-agent `optional-skills/software-development/subagent-driven-development` | Harness-agnostic delegation pattern with explicit pi mapping. |
 
 ## Attribution
 
-All five skills currently in `pi-skills/` are adapted from `NousResearch/hermes-agent`, which is MIT-licensed (Copyright (c) 2025 Nous Research). Some individual files carry their own upstream attribution beyond that, listed here for visibility:
+The three pi-adapted copies (`dogfood`, `dependabot-validator`, `pr-grill-me`) are copied from this repository's own root skills — same authorship, no external license involved.
+
+The other five are adapted from `NousResearch/hermes-agent`, which is MIT-licensed (Copyright (c) 2025 Nous Research). Individual files with additional upstream attribution:
 
 | Skill | Adapted from | License basis |
 |---|---|---|
-| `adversarial-ux-test` | `optional-skills/dogfood/adversarial-ux-test` | MIT (hermes-agent repo license); upstream frontmatter also credited `Omni @ Comelse` as author |
-| `rest-graphql-debug` | `optional-skills/software-development/rest-graphql-debug` | MIT (hermes-agent repo license); upstream frontmatter also credited `eren-karakus0` as author |
+| `adversarial-ux-test` | `optional-skills/dogfood/adversarial-ux-test` | MIT (hermes-agent repo license); upstream frontmatter also credited `Omni @ Comelse`. |
+| `rest-graphql-debug` | `optional-skills/software-development/rest-graphql-debug` | MIT (hermes-agent repo license); upstream frontmatter also credited `eren-karakus0`. |
 | `web-pentest` | `optional-skills/security/web-pentest` | MIT (hermes-agent repo license). Adapted from Shannon's pipeline (Keygraph, AGPL) — **concepts only, no code borrowed**, per the upstream skill's own disclaimer, carried forward in this skill's intro. |
-| `cloudflare-temporary-deploy` | `optional-skills/web-development/cloudflare-temporary-deploy` | MIT (hermes-agent repo license and upstream frontmatter) |
+| `cloudflare-temporary-deploy` | `optional-skills/web-development/cloudflare-temporary-deploy` | MIT (hermes-agent repo license and upstream frontmatter). |
 | `subagent-driven-development` | `optional-skills/software-development/subagent-driven-development` | MIT (hermes-agent repo license). Its two `references/*.md` files are further adapted from `gsd-build/get-shit-done`, MIT © 2025 Lex Christopherson — attribution kept inline in those files. |
 
-Note: this repository (`agent-skills`) does not currently declare its own top-level `LICENSE` file. That's a decision for the repo owner, not something to pick unilaterally during a skill import — flagging it here rather than resolving it. Everything attributed above is MIT-sourced, which is permissive enough to be compatible with essentially any license this repo eventually adopts.
+Note: this repository (`agent-skills`) does not declare a top-level `LICENSE` file. That's the repo owner's call, not something to set during a skill import — flagged here rather than resolved. Everything above is MIT-sourced (or first-party), permissive enough to be compatible with essentially any license the repo eventually adopts.
