@@ -25,8 +25,25 @@ The **pragmatism filter** (Step 4) is what makes this useful instead of just ent
 
 ## Prerequisites
 
-- `dogfood`'s one-time setup already done (`cd dogfood/scripts && npm install`) — this skill drives the same `browser-driver.mjs`.
+- The **`dogfood` skill installed as a sibling** in the same skills collection — this skill reuses its bundled browser driver (`dogfood/scripts/browser-driver.mjs`). Run dogfood's one-time setup first (`cd <dogfood>/scripts && npm install && npx playwright install chromium`). See `dogfood/SKILL.md`.
 - A deployed/staging URL. Not local dev — see Tips below on why.
+- Only the four core tools (**Read, Write, Edit, Bash**) plus Node are required.
+
+## Resolve the browser driver (do this once, first)
+
+This skill and `dogfood` live side by side in the skills collection. Point at dogfood's driver relative to this skill's own directory, and confirm it exists before going further:
+
+```bash
+# SKILL_DIR = the directory containing THIS SKILL.md (the path you loaded it from).
+SKILL_DIR="/path/to/this/adversarial-ux-test"        # set to the real path
+DOGFOOD_DRIVER="$SKILL_DIR/../dogfood/scripts/browser-driver.mjs"
+if [ ! -f "$DOGFOOD_DRIVER" ]; then
+  echo "dogfood driver not found at $DOGFOOD_DRIVER — install the dogfood skill as a sibling first." >&2
+fi
+OUT="./adversarial-ux-output"; mkdir -p "$OUT/screenshots"
+```
+
+Use `$DOGFOOD_DRIVER` and `$OUT` in every command below.
 
 ## How to Use
 
@@ -61,14 +78,10 @@ The persona must be **specific enough to stay in character** for 20 minutes of t
 
 1. Read any available project docs for app context and URLs.
 2. **Fully inhabit the persona** — their frustrations, limitations, goals.
-3. Start the browser session and navigate to the app. Resolve the driver
-   path from the repo root rather than a bare relative path, so this works
-   regardless of the shell's current directory:
+3. Start the browser session (background) and navigate to the app, using the `$DOGFOOD_DRIVER` and `$OUT` you set above:
    ```bash
-   REPO_ROOT="$(git rev-parse --show-toplevel)"
-   DOGFOOD_DRIVER="$REPO_ROOT/dogfood/scripts/browser-driver.mjs"
-   node "$DOGFOOD_DRIVER" launch --state-dir {output_dir}/.browser   # run_in_background: true
-   node "$DOGFOOD_DRIVER" navigate --state-dir {output_dir}/.browser --url "https://staging.example.com"
+   node "$DOGFOOD_DRIVER" launch --state-dir "$OUT/.browser" &   # background; blocks until close
+   node "$DOGFOOD_DRIVER" navigate --state-dir "$OUT/.browser" --url "https://staging.example.com"
    ```
 4. **Attempt the persona's ACTUAL TASKS** (not a feature tour):
    - Can they do what they came to do?
@@ -85,14 +98,15 @@ The persona must be **specific enough to stay in character** for 20 minutes of t
    - **Speed** — does it feel faster than their current method?
    - **Terminology** — any jargon they wouldn't understand?
    - **Navigation** — can they find their way back? do they know where they are?
-6. At every pain point, take a screenshot and look at it yourself (you're multimodal — no separate analysis step needed):
+6. At every pain point, capture a screenshot:
    ```bash
-   node "$DOGFOOD_DRIVER" annotate --state-dir {output_dir}/.browser --path {output_dir}/screenshots/pain-N.png
+   node "$DOGFOOD_DRIVER" annotate --state-dir "$OUT/.browser" --path "$OUT/screenshots/pain-1.png"
    ```
-   Then use the **Read tool** on the PNG.
+   - **If your harness can view images:** open the PNG and judge the layout/friction directly.
+   - **If it cannot:** run `node "$DOGFOOD_DRIVER" snapshot --state-dir "$OUT/.browser"` and reason from the accessibility tree (text). Note in the report that purely visual friction wasn't assessed.
 7. Check the browser console for JS errors on every page:
    ```bash
-   node "$DOGFOOD_DRIVER" console --state-dir {output_dir}/.browser --clear true
+   node "$DOGFOOD_DRIVER" console --state-dir "$OUT/.browser" --clear true
    ```
 
 ## Step 3: The Rant (Write Feedback in Character)
@@ -152,7 +166,7 @@ For **YELLOW** items: one catch-all ticket with all notes.
 
 **WHITE** items appear in the report only. No tickets.
 
-**Max 10 tickets per session** — focus on the worst issues. If the user has a GitHub repo connected, offer to file these via the GitHub tools; otherwise just list them for the user to triage.
+**Max 10 tickets per session** — focus on the worst issues. If your harness can create GitHub issues (via an integration or the `gh` CLI in Bash), offer to file the RED/GREEN tickets that way; otherwise write them to `$OUT/tickets.md` and list them for the user to triage.
 
 ## Step 6: Report and Clean Up
 
@@ -160,11 +174,11 @@ Deliver:
 1. The persona rant (Step 3) — entertaining and visceral
 2. The filtered assessment (Step 4) — pragmatic and actionable
 3. Tickets created (Step 5)
-4. Screenshots of key issues — send the critical ones with `SendUserFile`
+4. Screenshots of key issues — give the user the exact paths under `$OUT/screenshots/` (and use your harness's file-delivery capability to surface them if it has one)
 
 Then shut down the browser:
 ```bash
-node "$DOGFOOD_DRIVER" close --state-dir {output_dir}/.browser
+node "$DOGFOOD_DRIVER" close --state-dir "$OUT/.browser"
 ```
 
 ## Tips

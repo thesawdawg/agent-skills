@@ -66,10 +66,10 @@ Use the `Bash` tool for every step. Always pin the version (`wrangler@latest` or
    ```
    The proof-of-work check adds a short automatic delay. On success Wrangler prints an `Account: <name> (created)` (or `(reused)`) line, a `Claim URL`, and the live `https://<worker>.<account>.workers.dev` URL.
 
-3. **Parse the URLs** from that output. Run the helper to extract them reliably instead of eyeballing — resolve its path from the repo root so it works regardless of the shell's current directory:
+3. **Parse the URLs** from that output. Run the bundled helper to extract them reliably instead of eyeballing. Resolve its path from **this skill's own directory** (`SKILL_DIR` = the folder containing this SKILL.md) — not from `git rev-parse`, because you run this skill from inside the user's Worker project, where `git rev-parse` would return that project's root, not this skill's:
    ```bash
-   REPO_ROOT="$(git rev-parse --show-toplevel)"
-   PARSER="$REPO_ROOT/pi-skills/cloudflare-temporary-deploy/scripts/parse_deploy_output.py"
+   SKILL_DIR="/path/to/this/cloudflare-temporary-deploy"   # set to the real path
+   PARSER="$SKILL_DIR/scripts/parse_deploy_output.py"
    npx wrangler@latest deploy --temporary 2>&1 | python3 "$PARSER"
    ```
    It prints JSON: `{"live_url", "claim_url", "account", "account_state", "expires_minutes", "deployed"}`. **`claim_url` is redacted by default** (`claimToken=<REDACTED>`) since it's credential-equivalent — this is enough for verifying the deploy succeeded and for the iterate loop below. Only pass `--show-claim-url` at the one step (6) where you actually need the real value.
