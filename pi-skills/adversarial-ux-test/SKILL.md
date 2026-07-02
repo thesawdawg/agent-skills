@@ -61,10 +61,14 @@ The persona must be **specific enough to stay in character** for 20 minutes of t
 
 1. Read any available project docs for app context and URLs.
 2. **Fully inhabit the persona** — their frustrations, limitations, goals.
-3. Start the browser session and navigate to the app:
+3. Start the browser session and navigate to the app. Resolve the driver
+   path from the repo root rather than a bare relative path, so this works
+   regardless of the shell's current directory:
    ```bash
-   node dogfood/scripts/browser-driver.mjs launch --state-dir {output_dir}/.browser   # run_in_background: true
-   node dogfood/scripts/browser-driver.mjs navigate --state-dir {output_dir}/.browser --url "https://staging.example.com"
+   REPO_ROOT="$(git rev-parse --show-toplevel)"
+   DOGFOOD_DRIVER="$REPO_ROOT/dogfood/scripts/browser-driver.mjs"
+   node "$DOGFOOD_DRIVER" launch --state-dir {output_dir}/.browser   # run_in_background: true
+   node "$DOGFOOD_DRIVER" navigate --state-dir {output_dir}/.browser --url "https://staging.example.com"
    ```
 4. **Attempt the persona's ACTUAL TASKS** (not a feature tour):
    - Can they do what they came to do?
@@ -83,12 +87,12 @@ The persona must be **specific enough to stay in character** for 20 minutes of t
    - **Navigation** — can they find their way back? do they know where they are?
 6. At every pain point, take a screenshot and look at it yourself (you're multimodal — no separate analysis step needed):
    ```bash
-   node dogfood/scripts/browser-driver.mjs annotate --state-dir {output_dir}/.browser --path {output_dir}/screenshots/pain-N.png
+   node "$DOGFOOD_DRIVER" annotate --state-dir {output_dir}/.browser --path {output_dir}/screenshots/pain-N.png
    ```
    Then use the **Read tool** on the PNG.
 7. Check the browser console for JS errors on every page:
    ```bash
-   node dogfood/scripts/browser-driver.mjs console --state-dir {output_dir}/.browser --clear true
+   node "$DOGFOOD_DRIVER" console --state-dir {output_dir}/.browser --clear true
    ```
 
 ## Step 3: The Rant (Write Feedback in Character)
@@ -160,7 +164,7 @@ Deliver:
 
 Then shut down the browser:
 ```bash
-node dogfood/scripts/browser-driver.mjs close --state-dir {output_dir}/.browser
+node "$DOGFOOD_DRIVER" close --state-dir {output_dir}/.browser
 ```
 
 ## Tips
