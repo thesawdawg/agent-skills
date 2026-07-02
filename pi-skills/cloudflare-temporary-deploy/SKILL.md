@@ -66,11 +66,13 @@ Use the `Bash` tool for every step. Always pin the version (`wrangler@latest` or
    ```
    The proof-of-work check adds a short automatic delay. On success Wrangler prints an `Account: <name> (created)` (or `(reused)`) line, a `Claim URL`, and the live `https://<worker>.<account>.workers.dev` URL.
 
-3. **Parse the URLs** from that output. Run the helper to extract them reliably instead of eyeballing:
+3. **Parse the URLs** from that output. Run the helper to extract them reliably instead of eyeballing — resolve its path from the repo root so it works regardless of the shell's current directory:
+   ```bash
+   REPO_ROOT="$(git rev-parse --show-toplevel)"
+   PARSER="$REPO_ROOT/pi-skills/cloudflare-temporary-deploy/scripts/parse_deploy_output.py"
+   npx wrangler@latest deploy --temporary 2>&1 | python3 "$PARSER"
    ```
-   npx wrangler@latest deploy --temporary 2>&1 | python3 scripts/parse_deploy_output.py
-   ```
-   (Resolve `scripts/parse_deploy_output.py` to this skill's absolute path.) It prints JSON: `{"live_url", "claim_url", "account", "account_state", "expires_minutes", "deployed"}`.
+   It prints JSON: `{"live_url", "claim_url", "account", "account_state", "expires_minutes", "deployed"}`. **`claim_url` is redacted by default** (`claimToken=<REDACTED>`) since it's credential-equivalent — this is enough for verifying the deploy succeeded and for the iterate loop below. Only pass `--show-claim-url` at the one step (6) where you actually need the real value.
 
 4. **Verify the deploy is actually live** — do not trust the deploy log alone. `curl` the live URL and confirm the body matches what the code returns:
    ```
@@ -79,7 +81,11 @@ Use the `Bash` tool for every step. Always pin the version (`wrangler@latest` or
 
 5. **Iterate.** Edit the code, redeploy with the same `npx wrangler@latest deploy --temporary`. Within the 60-minute window Wrangler reuses the cached temporary account (`Account: <name> (reused)`), so the URL stays stable. `curl` again to confirm the change.
 
-6. **Hand the claim URL to the user.** Tell them: open it within 60 minutes to keep the deployment and any resources; if they don't claim it, everything auto-deletes. Treat the claim URL as a secret — it grants ownership of the account. Don't paste it into a public place on the user's behalf.
+6. **Hand the claim URL to the user.** This is the only point in the workflow where you need the unredacted value:
+   ```bash
+   npx wrangler@latest deploy --temporary 2>&1 | python3 "$PARSER" --show-claim-url
+   ```
+   Tell them: open it within 60 minutes to keep the deployment and any resources; if they don't claim it, everything auto-deletes. Treat the claim URL as a secret — it grants ownership of the account. Don't paste it into a public place on the user's behalf, and don't request `--show-claim-url` at any other step than this one.
 
 ## Quick Reference
 
@@ -87,7 +93,8 @@ Use the `Bash` tool for every step. Always pin the version (`wrangler@latest` or
 |---|---|
 | Check version (need 4.102.0+) | `npx wrangler@latest --version` |
 | Deploy (no account) | `npx wrangler@latest deploy --temporary` |
-| Deploy + parse URLs | `npx wrangler@latest deploy --temporary 2>&1 \| python3 scripts/parse_deploy_output.py` |
+| Deploy + parse URLs (claim URL redacted) | `npx wrangler@latest deploy --temporary 2>&1 \| python3 "$PARSER"` |
+| ...with the real claim URL | `npx wrangler@latest deploy --temporary 2>&1 \| python3 "$PARSER" --show-claim-url` |
 | Verify live | `curl -sS <live_url>` |
 | Clear cached temp account | `npx wrangler@latest logout` |
 
@@ -120,4 +127,5 @@ Use the `Bash` tool for every step. Always pin the version (`wrangler@latest` or
 - `npx wrangler@latest deploy --temporary` prints a `workers.dev` live URL and a `claim-preview?claimToken=` claim URL.
 - `curl -sS <live_url>` returns the exact body the Worker code produces.
 - A second deploy reports `Account: <name> (reused)` and the live URL is unchanged.
-- The parser script's self-test passes: `python3 scripts/parse_deploy_output.py --selftest`.
+- The parser script's self-test passes: `python3 "$PARSER" --selftest`.
+- Default parser output redacts the claim token (`claimToken=<REDACTED>`); `--show-claim-url` reveals it.

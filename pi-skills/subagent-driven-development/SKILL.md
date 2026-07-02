@@ -46,8 +46,9 @@ For EACH task in the plan:
 Delegate with complete, self-contained context — the subagent has no memory of this conversation, so it needs everything it needs to act:
 
 - The exact task spec (what to create/change, and why)
-- Instructions to follow TDD: write a failing test first, verify it fails, implement minimally, verify it passes, run the full suite for regressions, then commit
+- Instructions to follow TDD: write a failing test first, verify it fails, implement minimally, verify it passes, run the full suite for regressions
 - Project context the subagent can't infer on its own (language/framework, where existing code lives, test runner, conventions)
+- Whether to commit — see "Committing" below. **Do not have the implementer commit unless you've deliberately chosen the per-task-commit strategy for this run.** Defaulting to "always commit" produces noisy history, partially-reviewed commits, and merge conflicts between parallel subagents touching different tasks.
 
 In Claude Code, this is an `Agent` call with a self-contained prompt covering exactly those points — don't tell it to "read the plan," paste the relevant slice of the plan directly into the prompt.
 
@@ -90,6 +91,15 @@ Output format:
 
 Update the todo list (in Claude Code: `TaskUpdate` with `status: completed`).
 
+### Committing
+
+Pick one strategy up front, before dispatching the first implementer, and tell every implementer subagent which one is in effect:
+
+- **Per-task commits** — each implementer commits once both reviews pass for its task. Gives you a clean bisectable history and lets you stop midway with real, working checkpoints. Riskier if two tasks touch overlapping files, since later commits can conflict with earlier ones.
+- **Final squashed commit** — no implementer commits anything; you commit once at the end (see "Verify and Commit" below), after the integration review passes. Simpler, avoids inter-task conflicts entirely, but you lose per-task checkpoints if the run gets interrupted.
+
+Prefer final-squashed by default for tasks with any file overlap, or in any environment where committing mid-run isn't permitted. Use per-task commits only when tasks are genuinely independent (different files) and you specifically want the checkpoint granularity.
+
 ### 3. Final Review
 
 After ALL tasks are complete, dispatch a final integration reviewer:
@@ -114,7 +124,7 @@ git add -A && git commit -m "feat: complete [feature name] implementation"
 
 ## Task Granularity
 
-**Each task = 2-5 minutes of focused work.**
+**Each task should be small enough for one focused implementation pass and one meaningful review cycle** — a single clear outcome, minimal file overlap with other tasks, and acceptance criteria a reviewer can check independently. "2-5 minutes of focused work" is a useful gut-check for a small repo with a fast test suite, not a universal timer — scale it to your language, test suite speed, and codebase size, but keep the same shape: one outcome per task, not a bundle of them.
 
 **Too big:**
 - "Implement user authentication system"
@@ -178,6 +188,8 @@ git add -A && git commit -m "feat: complete [feature name] implementation"
 - But catches issues early (cheaper than debugging compounded problems later)
 
 ## Example Workflow
+
+This example uses the per-task-commit strategy (see "Committing" above) — with final-squashed instead, drop the "committed" lines and commit once at the end.
 
 ```
 [Read plan: docs/plans/auth-feature.md]

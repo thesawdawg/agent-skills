@@ -179,8 +179,10 @@ requests.post(url, json={"k": "v"})
 # WRONG — Accept says XML, code calls .json()
 requests.get(url, headers={"Accept": "text/xml"})
 
-# RIGHT — let requests build multipart with boundary
-requests.post(url, files={"file": open("doc.pdf", "rb")})
+# RIGHT — let requests build multipart with boundary, and close the file
+# handle deterministically instead of leaving it to the garbage collector
+with open("doc.pdf", "rb") as file_obj:
+    requests.post(url, files={"file": file_obj}, timeout=30)
 ```
 
 Common: form-encoded vs JSON, missing required fields, wrong HTTP method, unencoded query params.
@@ -250,18 +252,49 @@ The error body usually names the bad fields. Check:
 
 ### 429 Too Many Requests — rate limited
 
-Check `Retry-After` and `X-RateLimit-*` headers. Exponential backoff:
+Check `Retry-After` and `X-RateLimit-*` headers. Exponential backoff with jitter:
+
+**Only auto-retry idempotent methods (`GET`/`HEAD`/`PUT`/`DELETE`), or a `POST`/`PATCH` that carries a provider-supported idempotency key** (see "Pagination & Idempotency" below) — retrying a plain `POST` blind can double-create or double-charge.
 
 ```python
-import time, requests
+import email.utils
+import random
+import time
 
-def with_backoff(method, url, **kwargs):
-    for attempt in range(5):
-        resp = requests.request(method, url, **kwargs)
+import requests
+
+
+def _retry_after_seconds(resp: requests.Response, attempt: int) -> float:
+    """Retry-After is either an integer number of seconds or an HTTP-date."""
+    header = resp.headers.get("Retry-After")
+    if header is None:
+        base = 2**attempt
+    elif header.strip().isdigit():
+        base = int(header)
+    else:
+        try:
+            when = email.utils.parsedate_to_datetime(header)
+            base = max((when - email.utils.parsedate_to_datetime(resp.headers.get("Date", ""))).total_seconds(), 0)
+        except (TypeError, ValueError):
+            base = 2**attempt
+    # Full jitter: spreads out retries from many clients instead of
+    # thundering-herding back at the same instant.
+    return random.uniform(0, base)
+
+
+def with_backoff(method, url, *, max_attempts=5, **kwargs):
+    resp = None
+    for attempt in range(max_attempts):
+        try:
+            resp = requests.request(method, url, timeout=kwargs.pop("timeout", (3.05, 30)), **kwargs)
+        except (requests.ConnectTimeout, requests.ConnectionError):
+            if attempt == max_attempts - 1:
+                raise
+            time.sleep(random.uniform(0, 2**attempt))
+            continue
         if resp.status_code != 429:
             return resp
-        wait = int(resp.headers.get("Retry-After", 2 ** attempt))
-        time.sleep(wait)
+        time.sleep(_retry_after_seconds(resp, attempt))
     return resp
 ```
 
