@@ -7,6 +7,8 @@ description: Debug REST/GraphQL API failures — status codes, auth, TLS, schema
 
 Drive REST and GraphQL diagnosis with `curl` (via Bash) and Python's `requests` (via Bash). Isolate the failing layer before guessing at the fix.
 
+> **How to use this file:** it's a **lookup reference**, not a linear script. Do the 6-step "Layered Debug Flow" in order to *locate* the failing layer, then **jump to the one section that matches your symptom** (a status-code entry, the auth section, pagination, etc.). Don't try to execute every section top to bottom.
+
 ## When to Use
 
 - API returns unexpected status or body

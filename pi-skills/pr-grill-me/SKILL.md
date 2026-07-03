@@ -31,7 +31,7 @@ If the remote is **not GitHub** (GitLab, Bitbucket, self-hosted), the `pull/<N>/
 
 ### 2. Fetch the PR diff
 
-Fetch the PR branch and generate a full diff against the current base:
+Fetch the PR branch and generate a full diff against the current base. **Replace `<PR_NUMBER>` with the actual number everywhere** (e.g. for PR 42: `pull/42/head:pr-42`):
 ```bash
 git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
 git log pr-<PR_NUMBER> --not HEAD --pretty="%s%n%b"   # commit messages = stated intent
