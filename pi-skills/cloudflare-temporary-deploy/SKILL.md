@@ -66,13 +66,19 @@ Use the `Bash` tool for every step. Always pin the version (`wrangler@latest` or
    ```
    The proof-of-work check adds a short automatic delay. On success Wrangler prints an `Account: <name> (created)` (or `(reused)`) line, a `Claim URL`, and the live `https://<worker>.<account>.workers.dev` URL.
 
-3. **Parse the URLs** from that output. Run the bundled helper to extract them reliably instead of eyeballing. Resolve its path from **this skill's own directory** (`SKILL_DIR` = the folder containing this SKILL.md) — not from `git rev-parse`, because you run this skill from inside the user's Worker project, where `git rev-parse` would return that project's root, not this skill's:
+3. **Parse the URLs** from that output. Run the bundled helper instead of eyeballing. It lives in **this skill's own directory** — find that once (do not use `git rev-parse`; you run this skill from inside the user's Worker project, where it would return the wrong root). On stock pi, shell variables don't persist between Bash calls, so **set `PARSER` at the top of each block that uses it**:
    ```bash
-   SKILL_DIR="/path/to/this/cloudflare-temporary-deploy"   # set to the real path
-   PARSER="$SKILL_DIR/scripts/parse_deploy_output.py"
+   # Find this skill's parser once; note the absolute path it prints:
+   for d in "$HOME/.pi/agent/skills/cloudflare-temporary-deploy" "$HOME/.agents/skills/cloudflare-temporary-deploy" ".pi/skills/cloudflare-temporary-deploy" ".agents/skills/cloudflare-temporary-deploy" ./pi-skills/cloudflare-temporary-deploy ./cloudflare-temporary-deploy; do
+     [ -f "$d/scripts/parse_deploy_output.py" ] && printf 'PARSER=%s/scripts/parse_deploy_output.py\n' "$(cd "$d" && pwd)" && break
+   done
+   ```
+   Then, using that literal path:
+   ```bash
+   PARSER="/absolute/.../cloudflare-temporary-deploy/scripts/parse_deploy_output.py"
    npx wrangler@latest deploy --temporary 2>&1 | python3 "$PARSER"
    ```
-   It prints JSON: `{"live_url", "claim_url", "account", "account_state", "expires_minutes", "deployed"}`. **`claim_url` is redacted by default** (`claimToken=<REDACTED>`) since it's credential-equivalent — this is enough for verifying the deploy succeeded and for the iterate loop below. Only pass `--show-claim-url` at the one step (6) where you actually need the real value.
+   It prints JSON: `{"live_url", "claim_url", "account", "account_state", "expires_minutes", "deployed"}`. **`claim_url` is redacted by default** (`claimToken=<REDACTED>`) since it's credential-equivalent — enough for verifying the deploy and for the iterate loop. Only pass `--show-claim-url` at the one step (6) that needs the real value.
 
 4. **Verify the deploy is actually live** — do not trust the deploy log alone. `curl` the live URL and confirm the body matches what the code returns:
    ```
@@ -81,13 +87,16 @@ Use the `Bash` tool for every step. Always pin the version (`wrangler@latest` or
 
 5. **Iterate.** Edit the code, redeploy with the same `npx wrangler@latest deploy --temporary`. Within the 60-minute window Wrangler reuses the cached temporary account (`Account: <name> (reused)`), so the URL stays stable. `curl` again to confirm the change.
 
-6. **Hand the claim URL to the user.** This is the only point in the workflow where you need the unredacted value:
+6. **Hand the claim URL to the user.** This is the only point in the workflow where you need the unredacted value (re-set `PARSER` to the path from step 3):
    ```bash
+   PARSER="/absolute/.../cloudflare-temporary-deploy/scripts/parse_deploy_output.py"
    npx wrangler@latest deploy --temporary 2>&1 | python3 "$PARSER" --show-claim-url
    ```
    Tell them: open it within 60 minutes to keep the deployment and any resources; if they don't claim it, everything auto-deletes. Treat the claim URL as a secret — it grants ownership of the account. Don't paste it into a public place on the user's behalf, and don't request `--show-claim-url` at any other step than this one.
 
 ## Quick Reference
+
+`$PARSER` below is the absolute path found in step 3 — set it at the top of whichever block you run (variables don't persist between pi Bash calls).
 
 | Step | Command |
 |---|---|

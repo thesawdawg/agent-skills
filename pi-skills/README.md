@@ -28,31 +28,44 @@ pi's core is exactly four tools — **Read, Write, Edit, Bash** — and it self-
 
 Only `name` and `description` (pi's required fields: `name` ≤64 chars, lowercase/`a-z0-9-`; `description` ≤1024 chars, "what it does and when to use it"). Drop upstream extras (`version`, `platforms`, `metadata.*`, `triggers`, `toolsets`) on import; fold any useful "use when…" text from `triggers` into `description`, since that's what the harness reads to decide when to surface the skill.
 
-## Referencing bundled scripts and sibling skills
+## Shell state and paths (the rule that matters most for small models)
 
-Never assume the shell's current working directory: a skill runs from inside the **user's** project, not from where the skill is installed. Resolve bundled files from the skill's own directory. At the top of any script-using workflow, set:
+**On stock pi, each Bash command may run in a fresh shell — shell variables and `export`s do NOT survive between calls.** (A persistent shell is an optional extension, `pi-persistent-term` — see below — not the default.) A skill that sets `SKILL_DIR=...` in one step and uses `$SKILL_DIR` three steps later will hit an *empty* variable and fail in a way a small model won't diagnose. So skills here follow two rules:
+
+1. **Outputs use a fixed relative path** (`./dogfood-output`, `./pentest-engagement`, …). The working directory (the user's project root) is stable between calls, so the same relative path always resolves to the same place. Do **not** `cd` into these dirs — that would break the relative paths. No variable needed.
+
+2. **The one thing that must be absolute — the skill's own install directory (where `scripts/` lives)** — is re-declared at the top of *every* Bash block that needs it, and the value is a literal absolute path the model resolved once:
+
+   ```bash
+   # Resolve once — checks pi's standard skill locations, unambiguous and fast:
+   for d in "$HOME/.pi/agent/skills/<skill>" "$HOME/.agents/skills/<skill>" ".pi/skills/<skill>" ".agents/skills/<skill>" ./pi-skills/<skill> ./<skill>; do
+     [ -f "$d/scripts/<file>" ] && printf 'DIR=%s\n' "$(cd "$d" && pwd)" && break
+   done
+   # Then in EVERY block that runs the script, re-set the literal path:
+   DIR="/absolute/path/from/above"
+   node "$DIR/scripts/thing.mjs" ...
+   ```
+
+   Do **not** use `git rev-parse --show-toplevel` to find a skill's files — the skill runs inside the *user's* repo, so that returns the wrong root. For a **sibling skill's** asset (e.g. `adversarial-ux-test` and `web-pentest` reuse `dogfood`'s driver), resolve the sibling with the same loop pointed at `dogfood`.
+
+**Long-lived processes** (like the browser `launch`, which blocks until `close`) must be started **detached** so the Bash call returns, then confirmed by polling a log:
 
 ```bash
-# SKILL_DIR = the directory containing THIS SKILL.md — the path the agent loaded it from.
-SKILL_DIR="/abs/path/to/this/skill"
-node "$SKILL_DIR/scripts/thing.mjs" ...
+mkdir -p ./out/.browser
+nohup node "$DIR/scripts/browser-driver.mjs" launch --state-dir ./out/.browser > ./out/.browser/launch.log 2>&1 &
+for i in $(seq 1 20); do grep -q READY ./out/.browser/launch.log 2>/dev/null && { echo up; break; }; sleep 0.5; done
 ```
 
-Do **not** use `git rev-parse --show-toplevel` to find a skill's files — the skill runs inside the user's repo, so that returns the *wrong* root. For a **sibling skill's** asset (e.g. `adversarial-ux-test` and `web-pentest` reuse `dogfood`'s browser driver), reference it relative to `SKILL_DIR` and check it exists:
-
-```bash
-DOGFOOD_DRIVER="$SKILL_DIR/../dogfood/scripts/browser-driver.mjs"
-[ -f "$DOGFOOD_DRIVER" ] || echo "install the dogfood skill as a sibling first" >&2
-```
-
-For a skill's own multi-step workflow that creates a working directory, keep it as a variable (`OUT=...`, `ENGAGEMENT=...`) and reference `$VAR/subpath` throughout — do **not** `cd` into it, or later `$VAR/foo` paths silently break.
+**Findings/append files use JSONL, not a JSON array** — one object per line, appended with a `cat >> file <<'EOF'` heredoc. Small models corrupt a growing JSON array (they must re-serialize the whole thing); a JSONL line append can't break earlier lines. Validate each line afterward with a `python3 -c "json.loads(...)"` loop.
 
 ## Writing steps for small models
 
 - Number the steps. One action per step. State what success looks like ("when `launch` prints `READY`, the browser is up").
-- Give exact, copy-pasteable commands with the variables already defined earlier in the skill — don't leave `{placeholder}` tokens for the model to fill from imagination.
+- Make each Bash block self-contained: because variables don't persist (see above), re-declare any absolute path the block needs at its top. Never rely on a variable set in an earlier block.
+- Replace `{placeholder}` / `<PLACEHOLDER>` tokens with real values inline, and give a concrete example next to the first use (e.g. "for PR 42: `pull/42/head:pr-42`") so a small model doesn't run the placeholder verbatim.
 - Make decision points explicit: "if none respond, ask the user to pick (a)/(b)/(c)."
-- Put mandatory guardrails in their own callouts (e.g. web-pentest's authorization gate) so they can't be skimmed past.
+- Put mandatory guardrails in their own callouts, and add a compact "STOP — do these first" block at the very top for anything safety-critical (e.g. web-pentest's authorization gate) so a skimming model can't miss it.
+- Treat long reference-style skills as lookups, not linear scripts — say so at the top and point the model to the one matching section.
 
 ## Testing expectations
 
@@ -65,6 +78,25 @@ Bundled scripts must be run, not just eyeballed, before shipping:
 - Credential-like output (tokens, claim URLs, session cookies) is redacted by default; revealing it requires an explicit flag used only at the one step that needs the real value.
 - Skills that touch real network targets (`web-pentest`) keep their authorization/scope guardrails intact on adaptation — tighten, never loosen.
 - Skills that produce sensitive output (secrets, exploit payloads) prefer writing values to files and referencing the path, rather than pasting them into chat (some harnesses replay chat history through summarization/compaction).
+
+## Optional pi extensions (enhancements, NOT requirements)
+
+Every skill here is written to run on **bare pi core** (Read/Write/Edit/Bash) with a small model — that's the design contract, and nothing below is required. But if you're running a small model and want a smoother ride, these pi extensions address the exact failure modes the skills work around. **Read this first:** a pi extension is arbitrary TypeScript running with your full user permissions — installing one *is* granting code execution. So prefer **official** extensions (shipped in the [`earendil-works/pi`](https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions) repo, same maintainers as the core); for community ones, read the (small) source, pin a version, and ideally run under the official `sandbox/` or `permission-gate.ts`.
+
+Extensions fix **mechanical** problems (lost shell state, tracking, structured output). They do **not** make a small model reason better — the judgment-heavy steps (pragmatism filter, exploit classification, risk ranking) still depend on model capability.
+
+| Extension | Source | Fixes / helps | Which skills |
+|---|---|---|---|
+| **`pi-persistent-term`** | community ([vahidkowsari](https://github.com/vahidkowsari/pi-persistent-term)) | Persistent shell — cwd, venvs, **env vars survive between calls**. Removes the whole "re-declare paths every block" dance and makes backgrounded `launch` behave. | dogfood, adversarial-ux-test, web-pentest, cloudflare-temporary-deploy |
+| **`todo.ts`** | official | Persistent task list with UI → counters **step-drift** on the long multi-phase skills. | all multi-phase; esp. web-pentest, dogfood |
+| **`plan-mode/`** | official | Read-only exploration + step tracking → good for the recon/analysis phases. | web-pentest, dependabot-validator |
+| **`question.ts` / `questionnaire.ts`** | official | Structured user prompts instead of free-text → the "(a)/(b)/(c)" branches and the authorization gate. | dogfood, adversarial-ux-test, web-pentest |
+| **`structured-output.ts`** | official | Terminating tool for a clean final report/verdict. | pr-grill-me, dependabot-validator, dogfood |
+| **`subagent/`** | official | Real task delegation → the "if your harness supports delegation" steps become concrete. | subagent-driven-development, web-pentest, adversarial-ux-test |
+| **`sandbox/` (`@anthropic-ai/sandbox-runtime`), `gondolin/` (micro-VM), `permission-gate.ts`, `confirm-destructive.ts`** | official | OS-level isolation + per-command approval → the right way to run **destructive/active testing** safely rather than trusting a small model to self-restrain. | **web-pentest** (strongly recommended), cloudflare-temporary-deploy |
+| **`pi-permissions`** | community ([bu5hm4nn](https://github.com/bu5hm4nn/pi-permissions)) | Per-command approval, fail-closed SSH blocking. | web-pentest |
+
+Guidance: for a small model doing QA/browser work, `pi-persistent-term` + `todo.ts` remove the most friction. For **web-pentest specifically, run it under `sandbox/` + `permission-gate.ts`** regardless of model size. There's also a third-party [Agent Safehouse sandbox analysis of pi](https://agent-safehouse.dev/docs/agent-investigations/pi) if you want an outside read on the runtime.
 
 ## Skills in this directory
 

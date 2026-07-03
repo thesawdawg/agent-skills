@@ -29,7 +29,7 @@ Work through these steps in order. If your harness has a task list, track each s
 
 ### 1. Fetch the PR and read what it changes
 
-Fetch the PR branch into a local temp branch:
+Fetch the PR branch into a local temp branch. **Replace `<PR_NUMBER>` with the actual number everywhere it appears** (e.g. for PR 42: `pull/42/head:pr-42`):
 ```bash
 git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
 ```

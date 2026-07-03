@@ -29,21 +29,23 @@ The **pragmatism filter** (Step 4) is what makes this useful instead of just ent
 - A deployed/staging URL. Not local dev — see Tips below on why.
 - Only the four core tools (**Read, Write, Edit, Bash**) plus Node are required.
 
-## Resolve the browser driver (do this once, first)
+## Setup: paths & shell state (READ THIS FIRST)
 
-This skill and `dogfood` live side by side in the skills collection. Point at dogfood's driver relative to this skill's own directory, and confirm it exists before going further:
+Two facts, and how this skill handles them:
 
+1. **Each Bash command may run in a fresh shell** (stock pi), so shell variables do **not** carry over between calls. This skill therefore uses a **fixed relative output dir, `./adversarial-ux-output`** (the working directory / project root is stable, so the same relative path always resolves the same), and **re-sets the one absolute path it needs — `DGF`, the dogfood driver — at the top of every Bash block**. Fill in the real path each time; don't leave the placeholder.
+2. **Find the dogfood driver once** and reuse that exact string as `DGF`. It's the sibling `dogfood` skill's driver. Locate it unambiguously:
+   ```bash
+   for d in "$HOME/.pi/agent/skills/dogfood" "$HOME/.agents/skills/dogfood" ".pi/skills/dogfood" ".agents/skills/dogfood" ./pi-skills/dogfood ./dogfood; do
+     [ -f "$d/scripts/browser-driver.mjs" ] && printf 'DGF=%s/scripts/browser-driver.mjs\n' "$(cd "$d" && pwd)" && break
+   done
+   ```
+   Read the `DGF=/absolute/.../browser-driver.mjs` line it prints; use that literal path as `DGF` in every block below. If nothing prints, install the `dogfood` skill as a sibling first.
+
+Create the output dir once (relative path is stable across calls):
 ```bash
-# SKILL_DIR = the directory containing THIS SKILL.md (the path you loaded it from).
-SKILL_DIR="/path/to/this/adversarial-ux-test"        # set to the real path
-DOGFOOD_DRIVER="$SKILL_DIR/../dogfood/scripts/browser-driver.mjs"
-if [ ! -f "$DOGFOOD_DRIVER" ]; then
-  echo "dogfood driver not found at $DOGFOOD_DRIVER — install the dogfood skill as a sibling first." >&2
-fi
-OUT="./adversarial-ux-output"; mkdir -p "$OUT/screenshots"
+mkdir -p ./adversarial-ux-output/screenshots ./adversarial-ux-output/.browser
 ```
-
-Use `$DOGFOOD_DRIVER` and `$OUT` in every command below.
 
 ## How to Use
 
@@ -78,10 +80,13 @@ The persona must be **specific enough to stay in character** for 20 minutes of t
 
 1. Read any available project docs for app context and URLs.
 2. **Fully inhabit the persona** — their frustrations, limitations, goals.
-3. Start the browser session (background) and navigate to the app, using the `$DOGFOOD_DRIVER` and `$OUT` you set above:
+3. Start the browser **detached** (it blocks until `close`), then poll its log for `READY`, then navigate. Re-set `DGF` to your real path:
    ```bash
-   node "$DOGFOOD_DRIVER" launch --state-dir "$OUT/.browser" &   # background; blocks until close
-   node "$DOGFOOD_DRIVER" navigate --state-dir "$OUT/.browser" --url "https://staging.example.com"
+   DGF="/absolute/.../dogfood/scripts/browser-driver.mjs"    # ← from Setup step 2
+   nohup node "$DGF" launch --state-dir ./adversarial-ux-output/.browser \
+     > ./adversarial-ux-output/.browser/launch.log 2>&1 &
+   for i in $(seq 1 20); do grep -q READY ./adversarial-ux-output/.browser/launch.log 2>/dev/null && { echo "browser up"; break; }; sleep 0.5; done
+   node "$DGF" navigate --state-dir ./adversarial-ux-output/.browser --url "https://staging.example.com"
    ```
 4. **Attempt the persona's ACTUAL TASKS** (not a feature tour):
    - Can they do what they came to do?
@@ -98,15 +103,18 @@ The persona must be **specific enough to stay in character** for 20 minutes of t
    - **Speed** — does it feel faster than their current method?
    - **Terminology** — any jargon they wouldn't understand?
    - **Navigation** — can they find their way back? do they know where they are?
-6. At every pain point, capture a screenshot:
+6. At every pain point, capture a screenshot (re-set `DGF`):
    ```bash
-   node "$DOGFOOD_DRIVER" annotate --state-dir "$OUT/.browser" --path "$OUT/screenshots/pain-1.png"
+   DGF="/absolute/.../dogfood/scripts/browser-driver.mjs"
+   node "$DGF" annotate --state-dir ./adversarial-ux-output/.browser --path ./adversarial-ux-output/screenshots/pain-1.png
    ```
    - **If your harness can view images:** open the PNG and judge the layout/friction directly.
-   - **If it cannot:** run `node "$DOGFOOD_DRIVER" snapshot --state-dir "$OUT/.browser"` and reason from the accessibility tree (text). Note in the report that purely visual friction wasn't assessed.
-7. Check the browser console for JS errors on every page:
+   - **If it cannot:** run `node "$DGF" snapshot --state-dir ./adversarial-ux-output/.browser` and reason from the accessibility tree (text). Note in the report that purely visual friction wasn't assessed.
+   - ⚠️ `annotate` `--ref` numbers are regenerated on every `annotate`/`navigate` — don't reuse an old `--ref`; prefer `--selector "<css>"` when acting across steps.
+7. Check the browser console for JS errors on every page (re-set `DGF`):
    ```bash
-   node "$DOGFOOD_DRIVER" console --state-dir "$OUT/.browser" --clear true
+   DGF="/absolute/.../dogfood/scripts/browser-driver.mjs"
+   node "$DGF" console --state-dir ./adversarial-ux-output/.browser --clear true
    ```
 
 ## Step 3: The Rant (Write Feedback in Character)
@@ -166,7 +174,7 @@ For **YELLOW** items: one catch-all ticket with all notes.
 
 **WHITE** items appear in the report only. No tickets.
 
-**Max 10 tickets per session** — focus on the worst issues. If your harness can create GitHub issues (via an integration or the `gh` CLI in Bash), offer to file the RED/GREEN tickets that way; otherwise write them to `$OUT/tickets.md` and list them for the user to triage.
+**Max 10 tickets per session** — focus on the worst issues. If your harness can create GitHub issues (via an integration or the `gh` CLI in Bash), offer to file the RED/GREEN tickets that way; otherwise write them to `./adversarial-ux-output/tickets.md` and list them for the user to triage.
 
 ## Step 6: Report and Clean Up
 
@@ -174,11 +182,12 @@ Deliver:
 1. The persona rant (Step 3) — entertaining and visceral
 2. The filtered assessment (Step 4) — pragmatic and actionable
 3. Tickets created (Step 5)
-4. Screenshots of key issues — give the user the exact paths under `$OUT/screenshots/` (and use your harness's file-delivery capability to surface them if it has one)
+4. Screenshots of key issues — give the user the exact paths under `./adversarial-ux-output/screenshots/` (and use your harness's file-delivery capability to surface them if it has one)
 
-Then shut down the browser:
+Then shut down the browser (re-set `DGF`):
 ```bash
-node "$DOGFOOD_DRIVER" close --state-dir "$OUT/.browser"
+DGF="/absolute/.../dogfood/scripts/browser-driver.mjs"
+node "$DGF" close --state-dir ./adversarial-ux-output/.browser
 ```
 
 ## Tips
