@@ -13,7 +13,7 @@ See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example,
 
 ## Prerequisites
 
-- One-time setup: `cd dogfood/scripts && npm install` (pulls in the `playwright` npm package only — the Chromium *binary* is already pre-installed in this environment and `npm install` will not re-download it).
+- One-time setup: `cd dogfood/scripts && npm install` (pulls in the `playwright` and `axe-core` npm packages — the Chromium *binary* is already pre-installed in this environment and `npm install` will not re-download it).
 - A target URL and testing scope from the user, or the defaults below if they don't give one.
 
 ## Inputs
@@ -141,6 +141,7 @@ For every issue found:
 | `scroll [--direction up\|down]` | Scroll the page |
 | `back` | Go back in browser history |
 | `console [--clear true]` | Read (and optionally clear) captured console/page errors |
+| `axe [--tags <comma-list>]` | Run an automated axe-core scan of the current page; defaults to `wcag2a,wcag2aa,wcag21aa,wcag22aa` tags. Used by the `accessibility-audit` skill; also useful for a quick a11y sanity check mid-dogfood-run. |
 
 All commands take `--state-dir <dir>` pointing at the same directory passed to `launch`.
 
