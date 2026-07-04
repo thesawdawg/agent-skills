@@ -1,8 +1,10 @@
 # Codex CLI — Scripted/Non-Interactive Usage Reference
 
-Background reference for this skill's design. `SKILL.md` says what to do; this
-file documents why it's safe to do and where the facts came from, so the
-design can be re-verified later without repeating the research.
+Background reference for this skill's design. [SKILL.md](SKILL.md) says what
+to do; this file documents why it's safe to do and where the facts came from,
+so the design can be re-verified later without repeating the research. See
+also [USE_CASES.md](USE_CASES.md) for example invocations and the
+[top-level skills index](../USE_CASES.md).
 
 ## Relevant CLI surface (verified against `codex-cli 0.142.5`)
 
