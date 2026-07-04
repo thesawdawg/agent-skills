@@ -27,6 +27,7 @@ That maps to `codex-delegate` → `dogfood`, in that order — see "Combining sk
 | Check whether a Dependabot PR is safe to merge given this project's actual usage of the package | [`dependabot-validator`](dependabot-validator/USE_CASES.md) |
 | Get a self-review reality check on your own PR before requesting real review | [`pr-grill-me`](pr-grill-me/USE_CASES.md) |
 | Design, audit, or plan an application end-to-end — existing codebase or new idea | [`app-design`](app-design/USE_CASES.md) |
+| Run a WCAG conformance audit of a live web app, citing specific success criteria | [`accessibility-audit`](accessibility-audit/USE_CASES.md) |
 
 ---
 
@@ -44,7 +45,7 @@ Drives a real headless browser against a live app: navigates, clicks, fills form
 
 > Dogfood my app at `http://localhost:5173`. Try creating, editing, and deleting a project.
 
-Not for a static diff with nothing running — see `pr-grill-me` instead. See [`dogfood/USE_CASES.md`](dogfood/USE_CASES.md).
+Not for a static diff with nothing running — see `pr-grill-me` instead. Not for a WCAG-specific conformance check — see `accessibility-audit`, which shares this driver but scans against WCAG success criteria. See [`dogfood/USE_CASES.md`](dogfood/USE_CASES.md).
 
 ## 3. `dependabot-validator`
 
@@ -71,6 +72,14 @@ Question-driven, end-to-end design/audit lifecycle with two modes: **existing pr
 
 Not for a single well-understood bug fix, and not a substitute for `dogfood` alone if all the user wants is a QA pass. See [`app-design/USE_CASES.md`](app-design/USE_CASES.md).
 
+## 6. `accessibility-audit`
+
+WCAG 2.2 (AA and above) conformance testing of a live web app: automated `axe-core` scanning — the same actively-maintained rule engine behind Lighthouse/Deque — cross-referenced against a WCAG success-criteria table, plus manual checks for what automated tools structurally can't verify (keyboard operability, focus order, alt-text quality). Shares `dogfood`'s browser driver rather than duplicating it.
+
+> Run a WCAG AA audit on our checkout flow before we ship.
+
+Not for general bug-hunting QA with no accessibility framing — use `dogfood` for that. See [`accessibility-audit/USE_CASES.md`](accessibility-audit/USE_CASES.md).
+
 ---
 
 ## Combining skills
@@ -94,6 +103,11 @@ These skills are deliberately narrow — real workflows often chain them.
 1. `app-design` (Mode A) discovers, verifies, and tests the app (calling `dogfood` internally), then triages and proposes fixes.
 2. `codex-delegate` implements the approved fixes.
 3. `dogfood` re-runs to confirm the fix, if the change is UI-facing.
+
+**Accessibility fix cycle:**
+1. `accessibility-audit` finds WCAG violations with specific success criteria and affected elements.
+2. `codex-delegate` implements the fixes.
+3. `accessibility-audit` re-runs against the same pages to confirm the violations are resolved.
 
 Don't chain skills just because they exist — each step should still pass the "is this substantial enough to warrant it" bar from that skill's own `USE_CASES.md`.
 
