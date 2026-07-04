@@ -15,7 +15,7 @@ Good uses include:
 - Checking a specific flow (signup, checkout, settings) end-to-end
 - A visual/console sanity check after a UI change
 
-Do not use it for a static code review with nothing running — that's a normal code review or `pr-grill-me`. Do not use it if there's no reachable URL at all.
+Do not use it for a static code review with nothing running — that's a normal code review or `pr-grill-me`. Do not use it if there's no reachable URL at all. Do not use it when the user specifically wants a WCAG conformance check with citations to success criteria — that's [`accessibility-audit`](../accessibility-audit/USE_CASES.md), which shares this skill's browser driver.
 
 ## User examples
 
