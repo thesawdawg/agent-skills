@@ -1,6 +1,10 @@
 # Issue Taxonomy
 
-Use this taxonomy to classify issues found during dogfood QA testing.
+> Referenced from [SKILL.md](../SKILL.md).
+
+Use this taxonomy to classify issues found during dogfood QA testing. Reused
+by `app-design`'s [test battery](../../app-design/references/test-battery.md)
+for non-UI severity classification too.
 
 ## Severity Levels
 
