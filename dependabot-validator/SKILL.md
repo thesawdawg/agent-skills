@@ -7,6 +7,8 @@ description: Validate a Dependabot PR's package updates against the current proj
 
 Analyzes a Dependabot PR's dependency changes against the current project to surface breaking changes, deprecated APIs, and compatibility issues before merging.
 
+See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, and the [top-level skills index](../USE_CASES.md) — use [pr-grill-me](../pr-grill-me/SKILL.md) instead for a general PR review that isn't specifically about dependency compatibility.
+
 ## Prerequisites: GitHub Authentication
 
 This skill uses only **`git` with your existing SSH key** — no token, no `gh` CLI, no API calls required. GitHub exposes every PR branch at `refs/pull/<PR_NUMBER>/head`, which is fetchable over SSH just like any other ref.

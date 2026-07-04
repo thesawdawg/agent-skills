@@ -7,6 +7,8 @@ description: Interview the user about their PR's intent and expected behavior, t
 
 Interviews the author about what their PR is supposed to do, then holds the diff up to those answers to find discrepancies — things the code doesn't do that it should, things it does that it shouldn't, and edge cases that weren't considered.
 
+See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, and the [top-level skills index](../USE_CASES.md) — use [dependabot-validator](../dependabot-validator/SKILL.md) instead for a Dependabot dependency-bump PR specifically.
+
 ## Workflow
 
 ### 1. Get the PR Number
