@@ -8,6 +8,9 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
 
 const [, , cmd, ...rest] = process.argv;
 const args = {};
@@ -186,6 +189,19 @@ async function runLaunch() {
         await page.goBack({ waitUntil: 'load' });
         return { url: page.url() };
       }
+      case 'axe': {
+        // Re-inject on every call rather than caching an "already injected" flag —
+        // a `navigate` in between calls loads a fresh document with no axe global.
+        const axeSource = fs.readFileSync(require.resolve('axe-core'), 'utf8');
+        await page.evaluate(axeSource);
+        const tags = cargs.tags
+          ? cargs.tags.split(',')
+          : ['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'];
+        return await page.evaluate(
+          async (runTags) => window.axe.run(document, { runOnly: { type: 'tag', values: runTags } }),
+          tags
+        );
+      }
       default:
         throw new Error(`Unknown command: ${command}`);
     }
@@ -263,6 +279,10 @@ async function main() {
 
     case 'back':
       console.log(JSON.stringify(await rpc('back', {})));
+      return;
+
+    case 'axe':
+      console.log(JSON.stringify(await rpc('axe', { tags: args.tags }), null, 2));
       return;
 
     case 'console': {
