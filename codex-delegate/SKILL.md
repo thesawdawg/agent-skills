@@ -7,6 +7,8 @@ description: Delegate a medium-to-high importance implementation, refactor, debu
 
 Runs the `codex` CLI (user is already authenticated) as a single, sequential external subagent. One Codex conversation thread is opened per task and resumed for every follow-up step — never more than one Codex process running at a time, and never more than one thread per task.
 
+See also: [README.md](README.md) for the underlying CLI mechanics and the policy check behind this design, [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, and the [top-level skills index](../USE_CASES.md) for how this skill fits alongside the others.
+
 ## When to use this
 
 **Use it for:** a real implementation task, a multi-file refactor, a from-scratch investigation/audit, or anything where you'd otherwise spin up a heavyweight `Agent` subagent — i.e. medium-to-high importance work worth a second model's dedicated attention on the actual codebase.

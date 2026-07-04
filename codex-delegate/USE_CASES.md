@@ -2,7 +2,7 @@
 
 This guide shows **when to invoke `codex-delegate`**, **how to recognize the request**, **what to establish before starting**, and **what a successful run looks like**.
 
-See `README.md` for the underlying CLI mechanics and policy verification, and `SKILL.md` for the operational workflow itself. This file is examples only.
+See [README.md](README.md) for the underlying CLI mechanics and policy verification, and [SKILL.md](SKILL.md) for the operational workflow itself. This file is examples only. See also the [top-level skills index](../USE_CASES.md).
 
 ## Use it when
 
