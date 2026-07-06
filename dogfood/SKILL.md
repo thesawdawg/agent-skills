@@ -9,9 +9,11 @@ Systematic exploratory QA of a web application: navigate it, interact with it, c
 
 This skill drives a real headless Chromium instance via a small bundled Playwright script (`scripts/browser-driver.mjs`) — there's no built-in browser tool in this environment, so the script fills that gap. It keeps one browser session alive across the whole testing pass so pages, cookies, and console history persist between commands.
 
+See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, [references/local-app-setup.md](references/local-app-setup.md) for safely standing up a local target first, and the [top-level skills index](../USE_CASES.md). This skill is also called internally by `app-design`'s Mode A Test phase — see [app-design/SKILL.md](../app-design/SKILL.md).
+
 ## Prerequisites
 
-- One-time setup: `cd dogfood/scripts && npm install` (pulls in the `playwright` npm package only — the Chromium *binary* is already pre-installed in this environment and `npm install` will not re-download it).
+- One-time setup: `cd dogfood/scripts && npm install` (pulls in the `playwright` and `axe-core` npm packages — the Chromium *binary* is already pre-installed in this environment and `npm install` will not re-download it).
 - A target URL and testing scope from the user, or the defaults below if they don't give one.
 
 ## Inputs
@@ -104,7 +106,7 @@ For every issue found:
    ```json
    { "url": "...", "steps": ["..."], "expected": "...", "actual": "...", "console": "...", "screenshot": "screenshots/issue-N.png" }
    ```
-3. Classify severity (Critical/High/Medium/Low) and category (Functional/Visual/Accessibility/Console/UX/Content) against `references/issue-taxonomy.md`.
+3. Classify severity (Critical/High/Medium/Low) and category (Functional/Visual/Accessibility/Console/UX/Content) against [references/issue-taxonomy.md](references/issue-taxonomy.md).
 
 ### Phase 4: Categorize
 
@@ -116,7 +118,7 @@ For every issue found:
 
 ### Phase 5: Report
 
-1. Generate the final report using `templates/dogfood-report-template.md`, filling in the executive summary, per-issue sections (screenshots as relative markdown image links to `screenshots/*.png`), the summary table, and testing notes (what was tested, what wasn't, any blockers). Save it to `{output_dir}/report.md`.
+1. Generate the final report using [templates/dogfood-report-template.md](templates/dogfood-report-template.md), filling in the executive summary, per-issue sections (screenshots as relative markdown image links to `screenshots/*.png`), the summary table, and testing notes (what was tested, what wasn't, any blockers). Save it to `{output_dir}/report.md`.
 2. Shut down the browser session:
    ```bash
    node dogfood/scripts/browser-driver.mjs close --state-dir {output_dir}/.browser
@@ -139,6 +141,7 @@ For every issue found:
 | `scroll [--direction up\|down]` | Scroll the page |
 | `back` | Go back in browser history |
 | `console [--clear true]` | Read (and optionally clear) captured console/page errors |
+| `axe [--tags <comma-list>]` | Run an automated axe-core scan of the current page; defaults to `wcag2a,wcag2aa,wcag21aa,wcag22aa` tags. Used by the `accessibility-audit` skill; also useful for a quick a11y sanity check mid-dogfood-run. |
 
 All commands take `--state-dir <dir>` pointing at the same directory passed to `launch`.
 
