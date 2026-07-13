@@ -23,6 +23,7 @@ That maps to `codex-delegate` → `dogfood`, in that order — see "Combining sk
 | User goal | Skill |
 |---|---|
 | Delegate a substantial implementation, refactor, or investigation to Codex as a single external subagent | [`codex-delegate`](codex-delegate/USE_CASES.md) |
+| Offload tasks to a local or remote Ollama model, including running several in parallel | [`ollama-delegate`](ollama-delegate/USE_CASES.md) |
 | Explore a running web app and report real bugs backed by screenshots and console evidence | [`dogfood`](dogfood/USE_CASES.md) |
 | Check whether a Dependabot PR is safe to merge given this project's actual usage of the package | [`dependabot-validator`](dependabot-validator/USE_CASES.md) |
 | Get a self-review reality check on your own PR before requesting real review | [`pr-grill-me`](pr-grill-me/USE_CASES.md) |
@@ -39,7 +40,15 @@ Runs the Codex CLI as a single, sequential external subagent — one continuous 
 
 Not for a one-line fix, and not for running things concurrently — it's deliberately sequential. See [`codex-delegate/USE_CASES.md`](codex-delegate/USE_CASES.md).
 
-## 2. `dogfood`
+## 2. `ollama-delegate`
+
+Offloads text tasks to a local or remote Ollama model over its HTTP API — one-shot (`run`) or multi-turn (`start`/`send`). Unlike `codex-delegate`, independent one-shot calls can run in parallel, since Ollama's daemon serves concurrent requests.
+
+> Use Ollama to summarize each of these 12 changelog files — run them in parallel.
+
+Not for tasks needing deep reasoning, tool use, or file edits — the model only ever sees prompt text, no filesystem or shell access. See [`ollama-delegate/USE_CASES.md`](ollama-delegate/USE_CASES.md).
+
+## 3. `dogfood`
 
 Drives a real headless browser against a live app: navigates, clicks, fills forms, captures console errors and screenshots, produces a severity-ranked bug report.
 
@@ -47,7 +56,7 @@ Drives a real headless browser against a live app: navigates, clicks, fills form
 
 Not for a static diff with nothing running — see `pr-grill-me` instead. Not for a WCAG-specific conformance check — see `accessibility-audit`, which shares this driver but scans against WCAG success criteria. See [`dogfood/USE_CASES.md`](dogfood/USE_CASES.md).
 
-## 3. `dependabot-validator`
+## 4. `dependabot-validator`
 
 Fetches a Dependabot PR over SSH, diffs the actual dependency change, scans the codebase for real usage of the updated package, researches breaking changes, runs tests against the PR state, and returns a merge verdict.
 
@@ -55,7 +64,7 @@ Fetches a Dependabot PR over SSH, diffs the actual dependency change, scans the 
 
 Not for a general PR review, or a hand-written (non-Dependabot) dependency bump — see [`dependabot-validator/USE_CASES.md`](dependabot-validator/USE_CASES.md).
 
-## 4. `pr-grill-me`
+## 5. `pr-grill-me`
 
 Interviews the *author* about their own PR's intent one question at a time, then holds those answers up against the actual diff to surface gaps. Requires the author present to answer — it's not a third-party review.
 
@@ -63,7 +72,7 @@ Interviews the *author* about their own PR's intent one question at a time, then
 
 Not for reviewing someone else's PR, and not for a Dependabot bump specifically. See [`pr-grill-me/USE_CASES.md`](pr-grill-me/USE_CASES.md).
 
-## 5. `app-design`
+## 6. `app-design`
 
 Question-driven, end-to-end design/audit lifecycle with two modes: **existing project** (discover → verify → test → triage → enhance) or **new project** (intent → stack → specs → plan). Calls `dogfood` internally for runtime QA on web apps in Mode A.
 
@@ -72,7 +81,7 @@ Question-driven, end-to-end design/audit lifecycle with two modes: **existing pr
 
 Not for a single well-understood bug fix, and not a substitute for `dogfood` alone if all the user wants is a QA pass. See [`app-design/USE_CASES.md`](app-design/USE_CASES.md).
 
-## 6. `accessibility-audit`
+## 7. `accessibility-audit`
 
 WCAG 2.2 (AA and above) conformance testing of a live web app: automated `axe-core` scanning — the same actively-maintained rule engine behind Lighthouse/Deque — cross-referenced against a WCAG success-criteria table, plus manual checks for what automated tools structurally can't verify (keyboard operability, focus order, alt-text quality). Shares `dogfood`'s browser driver rather than duplicating it.
 
