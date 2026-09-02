@@ -1,13 +1,23 @@
 {
+  "mode": "repo",
+
+  "_comment_mode": "\"repo\" = docs live in a separate repository (fill in doc_repo, delete local_docs). \"local\" = docs live in this project repo (fill in local_docs, delete doc_repo). Delete every _comment_* key when writing the real config.",
+
   "doc_repo": {
     "path": "~/repos/docs",
     "remote": "git@github.com:me/docs.git",
     "branch": "main",
     "docs_root": "docs/"
   },
+
+  "local_docs": {
+    "docs_root": "docs/"
+  },
+
   "doc_index": ".claude/commit-documentor/doc-index.md",
   "push_mode": "pr",
   "branch_prefix": "docs/auto",
+
   "rules": {
     "exclude_commit_types": ["chore", "build", "ci", "style", "test"],
     "exclude_paths": [

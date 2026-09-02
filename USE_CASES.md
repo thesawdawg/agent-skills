@@ -29,7 +29,7 @@ That maps to `codex-delegate` → `dogfood`, in that order — see "Combining sk
 | Get a self-review reality check on your own PR before requesting real review | [`pr-grill-me`](pr-grill-me/USE_CASES.md) |
 | Design, audit, or plan an application end-to-end — existing codebase or new idea | [`app-design`](app-design/USE_CASES.md) |
 | Run a WCAG conformance audit of a live web app, citing specific success criteria | [`accessibility-audit`](accessibility-audit/USE_CASES.md) |
-| Check whether commits you just made need updates in a separate documentation repo, and publish them | [`commit-documentor`](commit-documentor/USE_CASES.md) |
+| Check whether commits you just made need documentation updates, and publish them to a docs repo (or an in-repo docs tree) | [`commit-documentor`](commit-documentor/USE_CASES.md) |
 
 ---
 
@@ -92,11 +92,11 @@ Not for general bug-hunting QA with no accessibility framing — use `dogfood` f
 
 ## 8. `commit-documentor`
 
-Runs after committing: reviews the unpushed commits, classifies each against user-defined rules (chore commits and dependency bumps typically excluded), finds the affected pages in a **separate documentation repo** via a committed local doc index, drafts the edits for approval, and on approval opens a PR against the doc repo.
+Runs after committing: reviews the unpushed commits, classifies each against user-defined rules (chore commits and dependency bumps typically excluded), finds the affected pages via a committed local doc index, drafts the edits for approval, and on approval publishes them. Two modes — `repo` (docs in a separate repository; opens a PR there) and `local` (no separate docs repo; creates and maintains a `docs/` tree in this repo, committed but never pushed).
 
 > I just committed the new export endpoint — check whether the docs repo needs updating.
 
-Not for docs that live in the same repo as the code, and not for reviewing the commits themselves for bugs. See [`commit-documentor/USE_CASES.md`](commit-documentor/USE_CASES.md).
+Not for a one-off README edit with no commit-driven review, and not for reviewing the commits themselves for bugs. See [`commit-documentor/USE_CASES.md`](commit-documentor/USE_CASES.md).
 
 ---
 
