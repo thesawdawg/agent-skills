@@ -1,0 +1,29 @@
+{
+  "doc_repo": {
+    "path": "~/repos/docs",
+    "remote": "git@github.com:me/docs.git",
+    "branch": "main",
+    "docs_root": "docs/"
+  },
+  "doc_index": ".claude/commit-documentor/doc-index.md",
+  "push_mode": "pr",
+  "branch_prefix": "docs/auto",
+  "rules": {
+    "exclude_commit_types": ["chore", "build", "ci", "style", "test"],
+    "exclude_paths": [
+      "**/*.lock",
+      "package-lock.json",
+      ".github/**"
+    ],
+    "always_document_paths": [
+      "src/api/**",
+      "src/config/**"
+    ],
+    "instructions": [
+      "Dependency version bumps never warrant a doc update unless a documented minimum version changes.",
+      "Never edit docs/legal/** or docs/releases/** — those are maintained by hand.",
+      "Public API changes always require an update to the reference page for that endpoint.",
+      "Match the surrounding page's voice; do not add a changelog entry unless asked."
+    ]
+  }
+}

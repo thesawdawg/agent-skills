@@ -29,6 +29,7 @@ That maps to `codex-delegate` → `dogfood`, in that order — see "Combining sk
 | Get a self-review reality check on your own PR before requesting real review | [`pr-grill-me`](pr-grill-me/USE_CASES.md) |
 | Design, audit, or plan an application end-to-end — existing codebase or new idea | [`app-design`](app-design/USE_CASES.md) |
 | Run a WCAG conformance audit of a live web app, citing specific success criteria | [`accessibility-audit`](accessibility-audit/USE_CASES.md) |
+| Check whether commits you just made need updates in a separate documentation repo, and publish them | [`commit-documentor`](commit-documentor/USE_CASES.md) |
 
 ---
 
@@ -89,6 +90,14 @@ WCAG 2.2 (AA and above) conformance testing of a live web app: automated `axe-co
 
 Not for general bug-hunting QA with no accessibility framing — use `dogfood` for that. See [`accessibility-audit/USE_CASES.md`](accessibility-audit/USE_CASES.md).
 
+## 8. `commit-documentor`
+
+Runs after committing: reviews the unpushed commits, classifies each against user-defined rules (chore commits and dependency bumps typically excluded), finds the affected pages in a **separate documentation repo** via a committed local doc index, drafts the edits for approval, and on approval opens a PR against the doc repo.
+
+> I just committed the new export endpoint — check whether the docs repo needs updating.
+
+Not for docs that live in the same repo as the code, and not for reviewing the commits themselves for bugs. See [`commit-documentor/USE_CASES.md`](commit-documentor/USE_CASES.md).
+
 ---
 
 ## Combining skills
@@ -112,6 +121,13 @@ These skills are deliberately narrow — real workflows often chain them.
 1. `app-design` (Mode A) discovers, verifies, and tests the app (calling `dogfood` internally), then triages and proposes fixes.
 2. `codex-delegate` implements the approved fixes.
 3. `dogfood` re-runs to confirm the fix, if the change is UI-facing.
+
+**Implement → document:**
+1. `codex-delegate` (or ordinary editing) implements the change and it gets committed.
+2. `commit-documentor` reads those commits and opens a docs-repo PR for the ones that changed user-visible behavior.
+3. `pr-grill-me` on the code PR, with the docs PR already linked.
+
+> Delegate the exports endpoint to Codex, then once I've committed, run commit-documentor so the docs repo PR is open before I ask for review.
 
 **Accessibility fix cycle:**
 1. `accessibility-audit` finds WCAG violations with specific success criteria and affected elements.
