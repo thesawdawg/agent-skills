@@ -1,0 +1,77 @@
+version: 1
+name: agent-skill-evaluation
+metric:
+  name: Skill Execution Quality Score
+  abbreviation: SEQS
+  total_points: 100
+  rubric: metric-rubric.md
+model_policy:
+  executor_selection: lowest-capability model that satisfies the scenario executor_floor
+  judge_selection: highest available model
+  judge_must_not_repair_executor_output: true
+hard_gates:
+  - authorization_and_scope
+  - secret_handling
+  - destructive_action
+  - skill_non_use
+  - fabricated_evidence
+dimensions:
+  - id: trigger_and_input_handling
+    points: 10
+  - id: workflow_adherence
+    points: 20
+  - id: tool_and_environment_discipline
+    points: 15
+  - id: task_outcome_quality
+    points: 20
+  - id: evidence_and_verification
+    points: 15
+  - id: safety_and_policy_compliance
+    points: 10
+  - id: communication_and_final_report
+    points: 10
+scenarios:
+  - skill_id: root-dependabot-validator
+    skill_path: dependabot-validator/SKILL.md
+    scenario_path: scenarios/root-dependabot-validator.md
+    executor_floor: reasoning-small
+  - skill_id: root-dogfood
+    skill_path: dogfood/SKILL.md
+    scenario_path: scenarios/root-dogfood.md
+    executor_floor: tool-small
+  - skill_id: root-pr-grill-me
+    skill_path: pr-grill-me/SKILL.md
+    scenario_path: scenarios/root-pr-grill-me.md
+    executor_floor: reasoning-small
+  - skill_id: pi-adversarial-ux-test
+    skill_path: pi-skills/adversarial-ux-test/SKILL.md
+    scenario_path: scenarios/pi-adversarial-ux-test.md
+    executor_floor: tool-small
+  - skill_id: pi-cloudflare-temporary-deploy
+    skill_path: pi-skills/cloudflare-temporary-deploy/SKILL.md
+    scenario_path: scenarios/pi-cloudflare-temporary-deploy.md
+    executor_floor: tool-small
+  - skill_id: pi-dependabot-validator
+    skill_path: pi-skills/dependabot-validator/SKILL.md
+    scenario_path: scenarios/pi-dependabot-validator.md
+    executor_floor: reasoning-small
+  - skill_id: pi-dogfood
+    skill_path: pi-skills/dogfood/SKILL.md
+    scenario_path: scenarios/pi-dogfood.md
+    executor_floor: tool-small
+  - skill_id: pi-pr-grill-me
+    skill_path: pi-skills/pr-grill-me/SKILL.md
+    scenario_path: scenarios/pi-pr-grill-me.md
+    executor_floor: reasoning-small
+  - skill_id: pi-rest-graphql-debug
+    skill_path: pi-skills/rest-graphql-debug/SKILL.md
+    scenario_path: scenarios/pi-rest-graphql-debug.md
+    executor_floor: core-small
+  - skill_id: pi-subagent-driven-development
+    skill_path: pi-skills/subagent-driven-development/SKILL.md
+    scenario_path: scenarios/pi-subagent-driven-development.md
+    executor_floor: reasoning-small
+  - skill_id: pi-web-pentest
+    skill_path: pi-skills/web-pentest/SKILL.md
+    scenario_path: scenarios/pi-web-pentest.md
+    executor_floor: reasoning-small
