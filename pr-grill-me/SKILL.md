@@ -9,84 +9,67 @@ Interviews the author about what their PR is supposed to do, then holds the diff
 
 See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, and the [top-level skills index](../USE_CASES.md) — use [dependabot-validator](../dependabot-validator/SKILL.md) instead for a Dependabot dependency-bump PR specifically.
 
+Uses only the four core tools (**Read, Write, Edit, Bash**) plus `git`. No harness-specific tools required — the "interview" is just plain questions asked in chat, one at a time.
+
+## Inputs
+
+- **PR number** (required). If not provided, ask for it (Step 1).
+- Runs inside the target repo (current directory).
+
 ## Workflow
 
-### 1. Get the PR Number
+### 1. Get the PR number and repo
 
-If the user didn't provide one, ask:
-> "What's the PR number? (I'll infer the repo from your git remote)"
+If the user didn't give a PR number, ask:
+> "What's the PR number? (I'll infer the repo from your git remote.)"
 
-Infer the repo from the current directory:
+Infer the repo from the remote:
 ```bash
 git remote get-url origin
-# git@github.com:myorg/myrepo.git → owner=myorg repo=myrepo
+# git@github.com:myorg/myrepo.git   → owner=myorg repo=myrepo
+# https://github.com/myorg/myrepo.git → owner=myorg repo=myrepo
 ```
+If the remote is **not GitHub** (GitLab, Bitbucket, self-hosted), the `pull/<N>/head` ref used below is GitHub-specific. For other hosts, ask the user for the source branch name and diff that branch against the base instead (`git fetch origin <branch>` then `git diff HEAD..FETCH_HEAD`).
 
-### 2. Fetch the PR Diff
+### 2. Fetch the PR diff
 
-Fetch the PR branch over SSH and generate a full diff against the base branch:
+Fetch the PR branch and generate a full diff against the current base. **Replace `<PR_NUMBER>` with the actual number everywhere** (e.g. for PR 42: `pull/42/head:pr-42`):
 ```bash
 git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
-git log pr-<PR_NUMBER> --not HEAD --pretty="%s%n%b"
-git diff HEAD..pr-<PR_NUMBER>
+git log pr-<PR_NUMBER> --not HEAD --pretty="%s%n%b"   # commit messages = stated intent
+git diff HEAD..pr-<PR_NUMBER>                          # the actual change
 ```
 
-Also read the PR commit messages for additional context on stated intent.
+Read the diff and the commit messages carefully. **Do NOT show the diff to the user yet, and do not summarize it for them** — read and internalize it silently. You'll use it to evaluate their answers, and the contrast only works if they answer from memory rather than from your summary.
 
-Do NOT show the diff to the user yet. Read and internalize it silently — you'll use it to evaluate their answers.
+### 3. Grill the author
 
-### 3. Grill the Author
+Ask these questions **one at a time**, waiting for the user's answer before asking the next. Do not paste all seven at once — that defeats the purpose.
 
-Ask these questions **one at a time**, waiting for the user's answer before asking the next. Do not ask them all at once.
+1. **Elevator pitch:** "In one or two sentences, what does this PR do?"
+2. **Trigger:** "What problem or situation does this fix or enable? Walk me through the scenario that motivated it."
+3. **What changes:** "What parts of the codebase did you need to touch, and why each one?"
+4. **What stays the same:** "What existing behavior must not change as a result of this PR? How did you verify that?"
+5. **Edge cases:** "What edge cases or failure modes did you consider? Which does the PR handle, and which did you intentionally leave out?"
+6. **Testing:** "How would someone verify this works? Are there tests, and if not, how did you validate it?"
+7. **Anything sketchy:** "Is there anything in the diff you're unsure about, cut corners on, or want a second opinion on?"
 
----
+When an answer is vague or contradicts what you already see in the diff, probe with one or two follow-up questions — conversational, not an interrogation.
 
-**Q1 — The elevator pitch:**
-> "In one or two sentences, what does this PR do?"
+### 4. Analyze the diff against the answers
 
-**Q2 — The trigger:**
-> "What problem or situation does this fix or enable? Walk me through the scenario that motivated it."
+Cross-reference everything the user said against the actual diff. Look for gaps in each category:
 
-**Q3 — What changes:**
-> "What parts of the codebase did you need to touch, and why each one?"
+- **Scope gaps** — files changed the user didn't mention, or files they mentioned that weren't changed.
+- **Behavior gaps** — functionality they described that the diff doesn't implement, or behavior the diff changes that they didn't mention.
+- **Edge-case gaps** — cases they said are handled but no code/test covers, or code paths handling cases they never mentioned.
+- **Test gaps** — behavior claimed as verified but no test exists or was changed.
+- **Unintended changes** — whitespace-only churn on logic files, commented-out code, debug statements, scope creep into unrelated areas.
+- **Consistency gaps** — stated intent contradicts what the diff does (e.g. "I only changed the API layer" but a model file was modified).
 
-**Q4 — What stays the same:**
-> "What existing behavior must not change as a result of this PR? How did you verify that?"
+### 5. Deliver the report
 
-**Q5 — Edge cases:**
-> "What edge cases or failure modes did you consider? Which ones does the PR handle, and which did you intentionally leave out?"
-
-**Q6 — Testing:**
-> "How would someone verify this works? Are there tests, and if not, how did you validate it?"
-
-**Q7 — Anything sketchy:**
-> "Is there anything in the diff you're unsure about, cut corners on, or want a second opinion on?"
-
----
-
-Probe follow-up when an answer is vague or inconsistent with what you can already see in the diff. Keep it conversational — one or two follow-up questions max per topic, not an interrogation.
-
-### 4. Analyze the Diff Against the Answers
-
-Now cross-reference everything the user said against the actual diff. For each category, find gaps:
-
-**Scope gaps** — files changed that the user didn't mention, or files the user mentioned that weren't changed
-
-**Behavior gaps** — functionality the user described that the diff doesn't implement, or behavior the diff changes that the user didn't mention
-
-**Edge case gaps** — edge cases the user said are handled but no code or test covers, or code paths that handle cases the user didn't mention
-
-**Test gaps** — user claimed behavior is verified but no test exists or was changed
-
-**Unintended changes** — whitespace-only diffs on logic files, commented-out code left in, debug statements, scope creep into unrelated areas
-
-**Consistency gaps** — user's stated intent contradicts what the diff actually does (e.g. "I only changed the API layer" but a model file was modified)
-
-### 5. Deliver the Report
-
-Open with a one-sentence summary of what the PR actually does based on the diff (not the user's description — this contrast is intentional).
-
-Then structure the findings:
+Open with a one-sentence summary of what the PR **actually** does based on the diff (not the user's description — the contrast is intentional). Then:
 
 ---
 
@@ -99,19 +82,19 @@ Then structure the findings:
 
 For each finding:
 
-**[Category]** — <one-sentence description of the discrepancy>
-> _You said:_ "<relevant quote from their answer>"
+**[Category]** — <one-sentence description>
+> _You said:_ "<quote from their answer>"
 > _The diff:_ <what the code actually shows>
 > _Risk:_ Low / Medium / High
 > _Suggestion:_ <concrete action — add a test, revert a file, document a decision, handle a case>
 
 ### Unaddressed Edge Cases
 
-List any edge cases you spotted in the diff that the user never mentioned and that aren't covered by tests or guards.
+Edge cases you spotted in the diff that the user never mentioned and that aren't covered by tests or guards.
 
 ### What Looks Good
 
-Call out one or two things where the diff lines up clearly with the stated intent — keep the author grounded.
+One or two things where the diff clearly matches the stated intent — keep the author grounded.
 
 ### Verdict
 
@@ -123,11 +106,11 @@ Call out one or two things where the diff lines up clearly with the stated inten
 
 — or —
 
-**Significant gaps** — The diff diverges from the stated intent in ways that suggest the PR isn't finished or has unintended side effects. Recommend revisiting before review.
+**Significant gaps** — The diff diverges from stated intent in ways that suggest the PR isn't finished or has unintended side effects. Revisit before review.
 
 ---
 
-### 6. Clean Up
+### 6. Clean up
 
 ```bash
 git branch -D pr-<PR_NUMBER>
@@ -137,5 +120,5 @@ git branch -D pr-<PR_NUMBER>
 
 - Be direct but not harsh. The goal is to help the author catch their own blind spots, not to embarrass them.
 - Quote their own words back when calling out a gap — it's harder to dismiss.
-- Prioritize findings by risk. Don't bury a High-risk gap under five Low-risk nits.
+- Prioritize by risk. Don't bury a High-risk gap under five Low-risk nits.
 - If the PR is genuinely solid, say so clearly — a clean bill of health is as useful as a list of problems.

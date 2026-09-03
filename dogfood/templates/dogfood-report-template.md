@@ -3,7 +3,7 @@
 **Target:** {target_url}
 **Date:** {date}
 **Scope:** {scope_description}
-**Tester:** Claude Code (automated exploratory QA)
+**Tester:** automated exploratory QA agent
 
 ---
 

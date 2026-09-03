@@ -2,7 +2,7 @@
 
 This guide shows **when a user should invoke each skill**, **how the model should recognize the request**, **what information it needs before starting**, and **what a successful result should look like**.
 
-The examples are written for the `pi-skills/` variants, which target a portable baseline of **Read, Write, Edit, and Bash**. Richer harnesses may use additional capabilities, but the workflow should still complete without depending on them.
+The examples are written for the `pi-skills/` variants, which target a portable baseline of **Read, Write, Edit, and Bash**. Richer harnesses may use additional capabilities, but the workflow should still complete without depending on them. Some examples chain these skills with the companion root skills `dogfood`, `dependabot-validator`, and `pr-grill-me` — consolidated single copies that live at this repo's root and follow the same four-tool baseline (see the root `USE_CASES.md`).
 
 ## How to use this guide
 
@@ -26,113 +26,15 @@ The model should map that request to `dogfood`, preserve the constraints, and pr
 
 | User goal | Skill |
 |---|---|
-| Explore a web app and report real usability or functional bugs | `dogfood` |
 | Stress-test a UI from difficult user perspectives | `adversarial-ux-test` |
 | Debug a failing REST or GraphQL integration | `rest-graphql-debug` |
-| Review whether a dependency-update PR is safe | `dependabot-validator` |
-| Perform a harsh, evidence-based pull request review | `pr-grill-me` |
 | Assess an authorized web target for security weaknesses | `web-pentest` |
 | Publish a temporary Cloudflare Worker preview | `cloudflare-temporary-deploy` |
 | Implement a multi-step change using isolated passes and review stages | `subagent-driven-development` |
 
 ---
 
-# 1. `dogfood`
-
-## Use it when
-
-Use `dogfood` when the user wants the model to **interact with a real web application**, follow important workflows, and report bugs supported by screenshots, browser state, console output, or reproducible steps.
-
-Typical targets include:
-
-- Local development servers
-- Preview deployments
-- Staging environments
-- Public applications that do not require prohibited access
-- Forms, dashboards, onboarding, checkout, settings, and account flows
-
-## User examples
-
-> Dogfood my app at `http://localhost:5173`. Try creating, editing, and deleting a project.
-
-> Test the staging signup flow. Use a fake account and stop before any paid action.
-
-> Explore the mobile navigation and report anything confusing or broken.
-
-> Check whether this dashboard is usable with only the keyboard.
-
-## Model selection cues
-
-Select this skill when the user asks to:
-
-- “test the app”
-- “click through the site”
-- “find UX bugs”
-- “try the main flows”
-- “explore the staging build”
-- “see what breaks”
-- “dogfood this”
-
-Do not select it for a static code review with no running application. Use `pr-grill-me` or a normal code-review workflow instead.
-
-## Inputs the model should establish
-
-Before starting, determine:
-
-- Target URL
-- Authentication method, if required
-- Allowed test accounts or credentials
-- High-priority workflows
-- Actions that must not be performed
-- Whether screenshots can be visually inspected
-- Whether the target can accept test data
-
-If a destructive or irreversible action is possible, stop before performing it unless the user explicitly authorized it.
-
-## Example model plan
-
-1. Verify the target is reachable.
-2. Launch the persistent browser driver.
-3. Capture an initial accessibility snapshot.
-4. Exercise the highest-value user flows.
-5. Record each finding with evidence and reproduction steps.
-6. Re-test severe findings once.
-7. Produce a prioritized report.
-
-## Expected output
-
-A useful report includes:
-
-- Executive summary
-- Environment and scope
-- Tested workflows
-- Findings ranked by severity
-- Reproduction steps
-- Expected versus actual behavior
-- Evidence paths for screenshots or logs
-- Areas not tested
-- Recommended next actions
-
-## Example result shape
-
-```markdown
-## Finding: Save button remains disabled after editing a project name
-
-**Severity:** High  
-**Area:** Project settings  
-**Reproduction:**
-1. Open an existing project.
-2. Change the project name.
-3. Observe the Save button.
-
-**Expected:** Save becomes enabled after the form is modified.  
-**Actual:** Save remains disabled, so the change cannot be submitted.  
-**Evidence:** `./dogfood-output/screenshots/project-save-disabled.png`
-```
-
----
-
-# 2. `adversarial-ux-test`
+# 1. `adversarial-ux-test`
 
 ## Use it when
 
@@ -226,7 +128,7 @@ whether it represents a company, project, or team.
 
 ---
 
-# 3. `rest-graphql-debug`
+# 2. `rest-graphql-debug`
 
 ## Use it when
 
@@ -327,179 +229,7 @@ expected token fields.
 
 ---
 
-# 4. `dependabot-validator`
-
-## Use it when
-
-Use `dependabot-validator` when the user wants to know whether a Dependabot pull request is **safe to merge in the context of the current project**.
-
-The skill should combine:
-
-- Manifest and lockfile diffing
-- Project usage analysis
-- Release-note research
-- Runtime and peer-dependency checks
-- Tests executed against the PR dependency state
-- A clear merge recommendation
-
-## User examples
-
-> Validate Dependabot PR 42 before I merge it.
-
-> Check whether the React 19 upgrade PR breaks anything we use.
-
-> Review the GitHub Actions dependency bumps in PR 118.
-
-> Tell me whether this patch update is actually low risk.
-
-## Model selection cues
-
-Select this skill when the user provides or refers to:
-
-- a Dependabot PR
-- dependency-update PR
-- package version bump
-- lockfile update
-- merge safety for dependency changes
-
-Use `pr-grill-me` for a general PR review that is not specifically about dependency compatibility.
-
-## Inputs the model should establish
-
-Required:
-
-- PR number
-- Repository working directory
-- Access to fetch the PR ref
-
-Useful:
-
-- Test command
-- Supported runtime versions
-- Deployment environment
-- Known compatibility constraints
-
-## Example model plan
-
-1. Fetch the PR branch.
-2. Identify every dependency change.
-3. Create an isolated worktree for the PR.
-4. Inspect how the project uses each package.
-5. Research relevant releases between old and new versions.
-6. Install dependencies and run tests in the PR worktree.
-7. Check peer and transitive dependency health.
-8. Remove the worktree and temporary branch.
-9. Produce a merge verdict.
-
-## Expected output
-
-The report should contain:
-
-- Package/version table
-- Risk per package
-- Relevant breaking or behavioral changes
-- Project call sites affected
-- Test results from the PR state
-- Peer/transitive conflicts
-- Research gaps
-- Final recommendation:
-  - `MERGE SAFE`
-  - `REVIEW BEFORE MERGING`
-  - `DO NOT MERGE`
-
-## Example result shape
-
-```markdown
-| Package | From | To | Risk | Evidence |
-|---|---:|---:|---|---|
-| `example-lib` | 2.4.1 | 3.0.0 | Breaking | Removed `legacyParse`, used in `src/import.ts:44` |
-
-**Recommendation:** DO NOT MERGE until `legacyParse` is replaced and the
-import tests pass in the PR worktree.
-```
-
----
-
-# 5. `pr-grill-me`
-
-## Use it when
-
-Use `pr-grill-me` when the user wants a pull request reviewed **aggressively but constructively**, with emphasis on correctness, regressions, maintainability, security, and missing tests.
-
-This skill should challenge assumptions rather than summarize the diff with a gold star sticker.
-
-## User examples
-
-> Grill PR 73. Focus on correctness and hidden edge cases.
-
-> Review my current branch like a skeptical staff engineer.
-
-> Find reasons this migration could fail in production.
-
-> Ignore formatting and focus on behavior, security, and tests.
-
-## Model selection cues
-
-Select this skill when the user asks to:
-
-- grill a PR
-- perform a strict review
-- find blockers
-- identify regressions
-- review a branch or patch
-- challenge the implementation
-- look for missing tests or unsafe assumptions
-
-## Inputs the model should establish
-
-Determine:
-
-- PR number or current branch
-- Base branch
-- Review priorities
-- Areas intentionally out of scope
-- Whether tests can be run
-- Whether the remote is GitHub or another provider
-
-## Example model plan
-
-1. Resolve the PR or branch diff.
-2. Understand the intended behavior.
-3. Trace changed control and data flows.
-4. Check boundary conditions and failure paths.
-5. Review tests for meaningful coverage.
-6. Check security, compatibility, and operational impact.
-7. Rank findings by severity.
-8. Provide an explicit review recommendation.
-
-## Expected output
-
-Findings should:
-
-- Lead with the defect, not praise
-- Explain user or system impact
-- Cite exact files and lines when possible
-- Show a concrete failure scenario
-- Suggest a focused correction
-- Avoid speculative nitpicks
-
-## Example result shape
-
-```markdown
-### Blocking: failed jobs can be reported as successful
-
-`run_pipeline()` catches `ProcessError`, logs it, and still returns `0`.
-The caller interprets that value as success and publishes the artifact.
-
-A failed build can therefore reach the release step.
-
-Return a nonzero status or re-raise the exception, and add a regression test
-for the failing subprocess path.
-```
-
----
-
-# 6. `web-pentest`
+# 3. `web-pentest`
 
 ## Use it when
 
@@ -591,7 +321,7 @@ serializing the invoice.
 
 ---
 
-# 7. `cloudflare-temporary-deploy`
+# 4. `cloudflare-temporary-deploy`
 
 ## Use it when
 
@@ -660,7 +390,7 @@ The result should include:
 
 ---
 
-# 8. `subagent-driven-development`
+# 5. `subagent-driven-development`
 
 ## Use it when
 

@@ -2,7 +2,7 @@
 
 Harness-portable skills, written **pi-first** — for the [pi coding agent](https://github.com/earendil-works/pi) (`@mariozechner/pi-coding-agent`) and any harness whose core is just **Read / Write / Edit / Bash**. They also run under richer harnesses (Claude Code, Codex CLI, Amp, Droid), which have everything pi has plus more.
 
-Some skills here are pi-adapted copies of skills that live at this repo's root (`dogfood`, `dependabot-validator`, `pr-grill-me`); the root copies are left as-is for their original environment. Others are adapted from [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)'s `optional-skills` tree. This file records the conventions all of them follow.
+All skills here are adapted from [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent)'s `optional-skills` tree. They follow the conventions recorded in this file. The companion skills `dogfood`, `dependabot-validator`, and `pr-grill-me` live at this repo's root (consolidated single copies following the same four-tool baseline); `adversarial-ux-test` and `web-pentest` reuse the root `dogfood` skill's browser driver.
 
 ## Design target: the four core tools
 
@@ -102,20 +102,15 @@ Guidance: for a small model doing QA/browser work, `pi-persistent-term` + `todo.
 
 | Skill | Origin | Notes |
 |---|---|---|
-| `dogfood` | pi-adapted copy of root `../dogfood` | Bundles the Playwright `browser-driver.mjs`; anchor skill the two below depend on. |
-| `dependabot-validator` | pi-adapted copy of root `../dependabot-validator` | Changelog lookups via `curl` to registry APIs instead of a search tool. |
-| `pr-grill-me` | pi-adapted copy of root `../pr-grill-me` | git-only; handles non-GitHub remotes. |
-| `adversarial-ux-test` | hermes-agent `optional-skills/dogfood/adversarial-ux-test` | Reuses the sibling `dogfood` driver. |
+| `adversarial-ux-test` | hermes-agent `optional-skills/dogfood/adversarial-ux-test` | Reuses the root `dogfood` skill's driver. |
 | `rest-graphql-debug` | hermes-agent `optional-skills/software-development/rest-graphql-debug` | Pure `curl` + Python via Bash. |
-| `web-pentest` | hermes-agent `optional-skills/security/web-pentest` | Authorization/scope guardrails; reuses sibling `dogfood` driver. |
+| `web-pentest` | hermes-agent `optional-skills/security/web-pentest` | Authorization/scope guardrails; reuses the root `dogfood` skill's driver. |
 | `cloudflare-temporary-deploy` | hermes-agent `optional-skills/web-development/cloudflare-temporary-deploy` | Redacts claim token by default. |
 | `subagent-driven-development` | hermes-agent `optional-skills/software-development/subagent-driven-development` | Harness-agnostic delegation pattern with explicit pi mapping. |
 
 ## Attribution
 
-The three pi-adapted copies (`dogfood`, `dependabot-validator`, `pr-grill-me`) are copied from this repository's own root skills — same authorship, no external license involved.
-
-The other five are adapted from `NousResearch/hermes-agent`, which is MIT-licensed (Copyright (c) 2025 Nous Research). Individual files with additional upstream attribution:
+All skills here are adapted from `NousResearch/hermes-agent`, which is MIT-licensed (Copyright (c) 2025 Nous Research). Individual files with additional upstream attribution:
 
 | Skill | Adapted from | License basis |
 |---|---|---|

@@ -36,7 +36,7 @@ Two facts, and how this skill handles them:
 1. **Each Bash command may run in a fresh shell** (stock pi), so shell variables do **not** carry over between calls. This skill therefore uses a **fixed relative output dir, `./adversarial-ux-output`** (the working directory / project root is stable, so the same relative path always resolves the same), and **re-sets the one absolute path it needs — `DGF`, the dogfood driver — at the top of every Bash block**. Fill in the real path each time; don't leave the placeholder.
 2. **Find the dogfood driver once** and reuse that exact string as `DGF`. It's the sibling `dogfood` skill's driver. Locate it unambiguously:
    ```bash
-   for d in "$HOME/.pi/agent/skills/dogfood" "$HOME/.agents/skills/dogfood" ".pi/skills/dogfood" ".agents/skills/dogfood" ./pi-skills/dogfood ./dogfood; do
+   for d in "$HOME/.pi/agent/skills/dogfood" "$HOME/.agents/skills/dogfood" ".pi/skills/dogfood" ".agents/skills/dogfood" ./dogfood; do
      [ -f "$d/scripts/browser-driver.mjs" ] && printf 'DGF=%s/scripts/browser-driver.mjs\n' "$(cd "$d" && pwd)" && break
    done
    ```
