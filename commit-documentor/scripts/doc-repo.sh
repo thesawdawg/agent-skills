@@ -23,22 +23,18 @@
 #   doc-repo.sh publish <branch> <commit-msg-file> [pr-body-file]
 #                                               # local mode ignores <branch>
 #
-# Config is read from the FIRST of these that exists in the project repo:
-#   .claude/commit-documentor.json
-#   .commit-documentor.json
+# Config is read from the project repo at:
+#   .agents/commit-documentor.json
 # See templates/config-template.json for the schema.
 
 set -euo pipefail
 
 project_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 
-config_file=""
-for candidate in "$project_root/.claude/commit-documentor.json" "$project_root/.commit-documentor.json"; do
-  [ -f "$candidate" ] && { config_file="$candidate"; break; }
-done
+config_file="$project_root/.agents/commit-documentor.json"
 
-if [ -z "$config_file" ]; then
-  echo "commit-documentor: no config found. Expected $project_root/.claude/commit-documentor.json" >&2
+if [ ! -f "$config_file" ]; then
+  echo "commit-documentor: no config found. Expected $config_file" >&2
   echo "Run the first-run setup in SKILL.md — do not guess a documentation location." >&2
   exit 3
 fi

@@ -1,6 +1,6 @@
 # Top-Level Skills: Practical Use Cases
 
-This is the index for the top-level skills in `/home/sawyer/.claude/skills/` — the full-tooling counterparts to the harness-portable `pi-skills/` collection (see `pi-skills/USE_CASES.md` for those; they target a constrained baseline of Read/Write/Edit/Bash only, whereas the skills below assume the full toolset — a real headless browser, `Agent` subagents, `WebSearch`, etc.).
+This is the index for the top-level skills in this repo — the full-tooling counterparts to the harness-portable `pi-skills/` collection (see `pi-skills/USE_CASES.md` for those; they target a constrained baseline of Read/Write/Edit/Bash only, whereas the skills below assume the full toolset — a real headless browser, `Agent` subagents, `WebSearch`, etc.).
 
 Each skill below has its own `USE_CASES.md` with full detail: trigger phrases, inputs to establish, an example model plan, and a sample output. **This file is a chooser and cross-reference, not a duplicate** — when a skill's own file changes, come back here only if the one-line summary or chooser table needs updating.
 

@@ -59,7 +59,7 @@ way — stop cleanly: say the skill needs a documentation target and leave the r
 untouched. Never invent a docs repo, never write docs to a path the user didn't
 agree to.
 
-Then write `.claude/commit-documentor.json` from
+Then write `.agents/commit-documentor.json` from
 [templates/config-template.json](templates/config-template.json), keeping only the
 block for the chosen mode (`doc_repo` or `local_docs`) and dropping every
 `_comment_*` key. Show it to the user and offer to commit it to the project repo.
@@ -69,7 +69,7 @@ Requires `jq`. `gh` is only needed for the PR step in `repo` mode.
 ## Prerequisite: the doc index
 
 The index lives in the project repo at the config's `doc_index` path (default
-`.claude/commit-documentor/doc-index.md`) and is **committed** — it is the local,
+`.agents/commit-documentor/doc-index.md`) and is **committed** — it is the local,
 reviewable map of code area → doc page, and it is what keeps doc querying cheap
 and in sync.
 

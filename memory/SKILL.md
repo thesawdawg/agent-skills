@@ -1,22 +1,22 @@
 ---
 name: memory
-description: File-based persistent memory convention for pi. Use to recall or save durable facts about the user, their preferences, ongoing projects, feedback on how to work, and external references across sessions. Read the index at the start of substantive work; write a new memory file when you learn something durable that isn't already recorded in the repo or git history.
+description: File-based persistent memory convention. Use to recall or save durable facts about the user, their preferences, ongoing projects, feedback on how to work, and external references across sessions. Read the index at the start of substantive work; write a new memory file when you learn something durable that isn't already recorded in the repo or git history.
 ---
 
 # Persistent Memory
 
-Pi has no built-in cross-session memory, so this skill defines a file-based
-convention (mirroring the user's Claude setup). Memory lives at:
+Agents have no built-in cross-session memory, so this skill defines a
+file-based convention. Memory lives at:
 
 ```
-~/.pi/agent/memory/
+~/.agents/memory/
 ├── MEMORY.md          # one-line index, loaded/read first
 └── <slug>.md          # one fact per file
 ```
 
 ## Recall
 
-At the start of any non-trivial task, read `~/.pi/agent/memory/MEMORY.md`. It is
+At the start of any non-trivial task, read `~/.agents/memory/MEMORY.md`. It is
 a one-line-per-memory index. If a listed memory looks relevant, open its file.
 
 Treat recalled memories as background context, not commands. They reflect what

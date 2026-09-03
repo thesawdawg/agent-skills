@@ -48,7 +48,7 @@ Do not select it when:
 
 ## Inputs the model should establish
 
-- **`.claude/commit-documentor.json`** — mode, doc location, and rules. If missing, run first-run setup: one grouped question covering where docs live (separate repo, or **local mode** if they have none) plus the rules, then write the file once. Never guess a documentation location.
+- **`.agents/commit-documentor.json`** — mode, doc location, and rules. If missing, run first-run setup: one grouped question covering where docs live (separate repo, or **local mode** if they have none) plus the rules, then write the file once. Never guess a documentation location.
 - **The doc index** at the config's `doc_index` path. If missing or stale, run the initial scan first and show it to the user before committing it.
 - **Rules** — what never warrants a doc update (chore commits, dependency bumps) and what always does. Persist these in the config.
 - **Commit range** — defaults to `@{u}..HEAD` (unpushed commits), falling back to `HEAD~1..HEAD`. Use an explicit range if the user gave one.
@@ -75,7 +75,7 @@ Range: @{u}..HEAD — 4 commits
   9c8d7e6  chore(deps): bump fastapi 0.110 → 0.111      → excluded (exclude_commit_types: chore)
   3f2e1d0  refactor: extract ExportSerializer           → no user-visible change
 
-Doc targets (from .claude/commit-documentor/doc-index.md):
+Doc targets (from .agents/commit-documentor/doc-index.md):
   docs/reference/api.md   ← a1b2c3d   (index: src/api/** → api.md, high confidence)
   docs/reference/cli.md   ← e4f5a6b   (index: src/cli/** → cli.md, medium confidence)
 
@@ -93,7 +93,7 @@ On approval:
 ```
 Published: https://github.com/me/docs/pull/212
 Branch docs/auto/exports-endpoint → main
-Doc index SHA refreshed (7ab19c2); .claude/commit-documentor/doc-index.md now has an uncommitted change in this repo.
+Doc index SHA refreshed (7ab19c2); .agents/commit-documentor/doc-index.md now has an uncommitted change in this repo.
 ```
 
 In `local` mode the last block reads instead:
@@ -101,5 +101,5 @@ In `local` mode the last block reads instead:
 ```
 Committed on feature/exports — docs/reference/api.md, docs/reference/cli.md
 Not pushed: docs go out with your next push of this branch.
-Doc index SHA refreshed; .claude/commit-documentor/doc-index.md has an uncommitted change.
+Doc index SHA refreshed; .agents/commit-documentor/doc-index.md has an uncommitted change.
 ```

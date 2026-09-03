@@ -14,7 +14,7 @@
     "docs_root": "docs/"
   },
 
-  "doc_index": ".claude/commit-documentor/doc-index.md",
+  "doc_index": ".agents/commit-documentor/doc-index.md",
   "push_mode": "pr",
   "branch_prefix": "docs/auto",
 
