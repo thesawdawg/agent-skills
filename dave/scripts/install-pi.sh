@@ -77,6 +77,34 @@ fix_skill_links() {
     "$f"
 }
 
+# references/ sit one level below the skill root, but link to plugin-root docs as
+# ../../../ — which resolves in the repo and not in pi's flatter install layout.
+fix_reference_links() {
+  local d="$1"
+  [ -d "$d" ] || return 0
+  sed -i \
+    -e 's|(\.\./\.\./\.\./INSTALL-PI\.md)|(../INSTALL-PI.md)|g' \
+    -e 's|(\.\./\.\./\.\./README\.md)|(../README.md)|g' \
+    -e 's|(\.\./\.\./\.\./USE_CASES\.md)|(../USE_CASES.md)|g' \
+    "$d"/*.md
+}
+
+# README/USE_CASES/INSTALL-PI are copied from the plugin root into the skill root,
+# so their "skills/dave/..." paths collapse by one level. The two links that point
+# outside the plugin entirely become absolute URLs rather than dangling.
+REPO_URL='https://github.com/thesawdawg/agent-skills/blob/main'
+fix_root_doc_links() {
+  local f
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    sed -i \
+      -e 's|](skills/dave/|](|g' \
+      -e "s|](\.\./USE_CASES\.md)|]($REPO_URL/USE_CASES.md)|g" \
+      -e "s|](\.\./pi-skills/README\.md)|]($REPO_URL/pi-skills/README.md)|g" \
+      "$f"
+  done
+}
+
 PI_NOTE_MARK='<!-- pi-install-note -->'
 
 append_pi_note() {
@@ -98,10 +126,13 @@ ways that change how the workflow above executes:
    what makes the result usable, not the process boundary. If the official pi
    \`subagent/\` extension is installed, dispatch a real subagent instead.
 
-2. **No MCP, so no Redmine MCP.** Use
-   [references/redmine-rest.md](references/redmine-rest.md) — plain \`curl\` against
-   Redmine's REST API. **Every approval rule in
-   [references/redmine.md](references/redmine.md) still holds**, unchanged.
+2. **No built-in MCP — but the Redmine MCP is still reachable.** Install the
+   \`pi-mcp-adapter\` extension (\`pi install npm:pi-mcp-adapter\`) and
+   [references/redmine.md](references/redmine.md) applies as written, except that
+   discovery goes through the proxy tool — \`mcp({ search: "redmine issue" })\`
+   instead of \`ToolSearch\`. Without the adapter, use
+   [references/redmine-rest.md](references/redmine-rest.md): the same operations
+   over plain \`curl\`. **Every approval rule still holds either way**, unchanged.
 
 3. **Shell state does not persist between Bash calls.** Never \`export DAVE_HOME\`
    in one step and rely on it in the next. \`dave.sh\` defaults to \`~/.dave\`, so
@@ -141,9 +172,11 @@ do_install() {
     # docs the skill links to, so those links resolve after install
     cp "$SRC/README.md"     "$SKILL_DST/README.md"
     cp "$SRC/USE_CASES.md"  "$SKILL_DST/USE_CASES.md"
-    [ -f "$SRC/INSTALL-PI.md" ] && cp "$SRC/INSTALL-PI.md" "$SKILL_DST/INSTALL-PI.md"
+    if [ -f "$SRC/INSTALL-PI.md" ]; then cp "$SRC/INSTALL-PI.md" "$SKILL_DST/INSTALL-PI.md"; fi
     mkdir -p "$ROLES_DST"
     fix_skill_links "$SKILL_DST/SKILL.md"
+    fix_reference_links "$SKILL_DST/references"
+    fix_root_doc_links "$SKILL_DST/README.md" "$SKILL_DST/USE_CASES.md" "$SKILL_DST/INSTALL-PI.md"
     append_pi_note "$SKILL_DST/SKILL.md"
   fi
   say "  skill      -> $SKILL_DST/SKILL.md            (/skill:dave)"
@@ -242,6 +275,12 @@ do_selftest() {
   check "AGENTS.md stanza written"      "grep -q 'dave:begin' '$tmp/AGENTS.md'"
   check "skill up-links rewritten"      "! grep -q '\\.\\./\\.\\./USE_CASES' '$tmp/skills/dave/SKILL.md'"
   check "linked USE_CASES.md present"   "[ -f '$tmp/skills/dave/USE_CASES.md' ]"
+  check "INSTALL-PI.md copied"          "[ -f '$tmp/skills/dave/INSTALL-PI.md' ]"
+  check "reference up-links rewritten"  "! grep -rq '\\.\\./\\.\\./\\.\\./' '$tmp/skills/dave/references'"
+  check "reference link resolves"       "[ -f '$tmp/skills/dave/references/../INSTALL-PI.md' ]"
+  check "root-doc links collapsed"      "! grep -rq '](skills/dave/' '$tmp/skills/dave'"
+  check "outside links absolutized"     "! grep -rq '](\\.\\./USE_CASES.md)' '$tmp/skills/dave'"
+  check "README link resolves"          "[ -f '$tmp/skills/dave/templates/config-template.json' ] && grep -q '](templates/config-template.json)' '$tmp/skills/dave/README.md'"
 
   echo "selftest: idempotence"
   bash "${BASH_SOURCE[0]}" --pi-root "$tmp" --with-agents-md >/dev/null
