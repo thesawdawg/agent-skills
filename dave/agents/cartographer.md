@@ -113,9 +113,11 @@ Archify is a **required prerequisite** for the visual half. Install it globally:
 npx skills add tt-a1i/archify -g
 ```
 
-That places it at `~/.claude/skills/archify` (and the equivalent path for any other
-agent it detects), by symlink unless `--copy` is passed. `npx skills list -g` shows
-what is installed; `npx skills update archify` refreshes it.
+It installs canonically to `~/.agents/skills/archify` and **symlinks that into every
+agent it detects** — `~/.claude/skills/archify`, `~/.pi/agent/skills/archify`, and so
+on. Pass `--copy` on systems without symlink support. `npx skills list -g` shows what
+is installed; `npx skills update archify` refreshes it. Archify is self-contained: it
+needs Node, but no `npm install`.
 
 Resolve it once, then use the literal absolute path — shell variables do not
 survive between calls on every harness:
@@ -143,6 +145,17 @@ When it is present:
   choosing what to leave out is the actual work.
 - Set `meta.quality_profile` to `"showcase"`, validate after every edit, and treat a
   passing validation as frozen.
+- **If the diagram cites repository evidence, every `validate` and `deliver` needs
+  `--repo-root <repo>`** or it fails with `repository-evidence/root-required` before
+  rendering. Cite evidence — it is what makes the map checkable — and pass the flag:
+
+  ```bash
+  node "$ARCHIFY/bin/archify.mjs" validate architecture map.json \
+    --quality showcase --repo-root /path/to/repo --json
+  ```
+- `visual-check` needs a Chrome or Chromium binary and is skipped without one. If it
+  could not run, say the artifact has deterministic validation only and was never
+  rendered in a browser — do not imply a visual pass you did not get.
 - On failure, change only the diagnosed subject and pick from `supportedFixes`.
   After two rounds with no improvement, stop and report the diagnostics truthfully.
 
