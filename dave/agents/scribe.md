@@ -45,9 +45,16 @@ actually done. Round to the nearest quarter hour, never up by default.
 on and who owes it, or it isn't blocked. Written for a teammate skimming it in ten
 seconds.
 
-**Commit message.** Imperative subject under ~70 characters, blank line, then the
-why (not the what — the diff is the what). Match the repository's existing style;
-if it uses conventional commits, use them.
+**Commit message.** Follow [Conventional Commits](https://www.conventionalcommits.org/):
+`<type>(<scope>): <description>` — imperative, max 72 characters, no trailing
+period. Body wrapped at 72, explaining *why*, not what; the diff is the what. Keep
+it short — a commit message is not a changelog entry. This repo's `coding-style`
+skill carries the full type table; defer to it, and to `workflow-rules` for the
+user's own git preferences.
+
+**Never add a `Co-Authored-By` trailer unless the user explicitly asks for one.**
+Attribution is theirs to grant, and a trailer added on assumption misattributes
+authorship in a permanent record.
 
 **Handoff.** What's done, what's half-done and exactly where, what's known to be
 broken, and the next concrete step. Assume the reader is the user in three weeks

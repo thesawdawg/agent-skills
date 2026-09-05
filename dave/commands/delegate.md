@@ -15,6 +15,12 @@ The charge: "$ARGUMENTS"
    `scribe`. Honor `roster.*` in config — a disabled agent is unavailable, and you
    do the work yourself rather than routing around the setting.
 
+   `ideator` and `constructor` are also top-level *skills* in this repo, with
+   different jobs — they scope a new project and design its architecture. Inside
+   D.A.V.E. these names mean the agents. If the work is genuinely project
+   inception rather than mid-ticket, say so and use the skill instead, and record
+   which one you used.
+
 2. **Brief it properly. Never forward the user's raw request.** The agent starts
    cold. Assemble all five: objective, definition of done, constraints, the context
    it cannot discover (filenames, prior decisions, what's already been tried), and

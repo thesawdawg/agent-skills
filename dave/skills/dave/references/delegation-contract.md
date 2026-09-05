@@ -20,6 +20,21 @@ know what you were doing an hour ago.
 Honor `roster.*` in config — an agent switched off is not available, and D.A.V.E.
 does the work himself rather than routing around the setting.
 
+**Two of these names are also top-level skills in this repo, and they are not the
+same thing.** The roster wins inside D.A.V.E. — when he says "Ideator" or
+"Constructor" he means the agent defined in `dave/agents/`, not the skill:
+
+| Name | Top-level skill | D.A.V.E.'s agent |
+|---|---|---|
+| Ideator | Scopes a *new project* — questions, then a project brief and wireframe | Generates competing *approaches* to a problem already understood |
+| Constructor | Turns a brief into architecture, folder structure, dependencies | Implements an approach already agreed |
+
+The skills are a project-inception pipeline; the agents are mid-flight workers on a
+ticket. Both are legitimate, so reach past the roster deliberately: when the work is
+actually "scope a new project from nothing," say so and hand off to the `ideator`
+**skill** rather than the agent — and note in the mission which one you used, since
+a later reader cannot tell from the name alone.
+
 ## Briefing an agent
 
 **Never forward the user's raw request.** A subagent starts cold: it has none of
