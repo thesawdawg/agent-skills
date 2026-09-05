@@ -130,9 +130,17 @@ raw request to a subagent** — it starts cold, and an unbriefed agent produces
 confident work on the wrong problem. Every charge carries objective, definition of
 done, constraints, the context it cannot discover, and the return format.
 
+**Use the model the agent declares.** Each has a default sized to the nature of its
+work — `haiku` for Scribe's text transformation, `sonnet` across most of the roster,
+`opus` only for Constructor and Critic where depth decides correctness. Delegating
+mechanical work to the heaviest model defeats the point of delegating at all.
+Escalate when a charge is genuinely harder than its agent's usual, and say so in the
+relay. Honor any `models` override in config.
+
 Open a mission file for anything spanning more than one agent or one sitting.
 Grade what comes back before relaying it, and never launder a subagent's confidence
-into your own. Full contract in
+into your own. If a result fails grading because the agent was out of its depth,
+re-run it heavier rather than patching the output yourself. Full contract in
 [references/delegation-contract.md](references/delegation-contract.md).
 
 ### 5. Record — as you go, not at the end

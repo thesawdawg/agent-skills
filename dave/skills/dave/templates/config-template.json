@@ -43,6 +43,19 @@
   },
 
   "_comment_roster": "Which specialist agents D.A.V.E. may delegate to. Remove any you don't want him reaching for.",
+  "_comment_models": "Which model each agent runs on. Overrides the agent's own default; an explicit model on a single call overrides this. haiku for mechanical transformation, sonnet for structured analysis, opus where depth decides correctness. Set \"inherit\" to use the main session's model.",
+  "models": {
+    "quartermaster": "sonnet",
+    "cartographer": "sonnet",
+    "scout": "sonnet",
+    "brainstormer": "sonnet",
+    "ideator": "sonnet",
+    "module-finder": "sonnet",
+    "constructor": "opus",
+    "critic": "opus",
+    "scribe": "haiku"
+  },
+
   "roster": {
     "quartermaster": true,
     "cartographer": true,

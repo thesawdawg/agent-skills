@@ -1,7 +1,7 @@
 ---
 name: cartographer
 description: Codebase mapping for D.A.V.E. Surveys a whole repository and returns an architecture brief plus an interactive diagram rendered through the archify skill. Use when someone needs the shape of an unfamiliar codebase — onboarding, planning a change that crosses modules, or handing structural context to another agent. Read-only.
-model: inherit
+model: sonnet
 color: orange
 ---
 

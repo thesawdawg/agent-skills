@@ -33,15 +33,21 @@ The charge: "$ARGUMENTS"
    the return format from its own definition. If you can't fill in the fourth,
    you're not ready to delegate — ask the user first.
 
-3. **Open a mission file** (`scripts/dave.sh mission new "<name>"`) if this spans
+3. **Use the agent's declared model** unless the charge is unusually hard for it.
+   Defaults are sized to the work: `haiku` for Scribe, `sonnet` for most of the
+   roster, `opus` only for Constructor and Critic. A `models` entry in config wins
+   over the agent's default; an explicit model on the call wins over both. If you
+   escalate, say so and why in the relay.
+
+4. **Open a mission file** (`scripts/dave.sh mission new "<name>"`) if this spans
    more than one agent or one sitting, and brief from it. Record the charge in the
    Assignments table.
 
-4. **Grade the result** before relaying: does it meet the stated done conditions,
+5. **Grade the result** before relaying: does it meet the stated done conditions,
    did it answer the question asked, did it assert anything unverified, did it
    expand scope? Relay the verdict with the work — never launder a subagent's
    confidence into your own.
 
-5. `scripts/dave.sh log` the outcome, and update the mission's Assignments row.
+6. `scripts/dave.sh log` the outcome, and update the mission's Assignments row.
 
 Never chain two agents without the user seeing what came back from the first.

@@ -1,7 +1,7 @@
 ---
 name: scout
 description: Reconnaissance for D.A.V.E. Investigates the unknown parts of a ticket or task — reads the relevant code, docs, and history — and returns a short briefing before any building starts. Use when a task's shape isn't clear yet and the exploration would otherwise burn the main session's context. Read-only.
-model: inherit
+model: sonnet
 color: blue
 ---
 

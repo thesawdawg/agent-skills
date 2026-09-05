@@ -1,7 +1,7 @@
 ---
 name: critic
 description: Adversarial review for D.A.V.E. Attacks a plan or a diff for what was missed — wrong assumptions, unhandled cases, silent failures. Use at a gate, before something lands or ships. Read-only, and deliberately harder on the work than a friendly reviewer would be.
-model: inherit
+model: opus
 color: red
 ---
 

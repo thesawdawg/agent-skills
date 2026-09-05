@@ -67,17 +67,23 @@ what does and doesn't carry over. The short version:
 
 **The roster**
 
-| Agent | Charge | Writes? |
-|---|---|---|
-| `quartermaster` | Boards and tickets → one ranked diff | no |
-| `cartographer` | Whole-codebase map: architecture brief + archify diagram | its own artifacts |
-| `scout` | Reconnaissance on one question, before building | no |
-| `brainstormer` | Expands a hunch into sharpened framings | no |
-| `ideator` | Genuinely distinct approaches to a decided problem | no |
-| `module-finder` | Finds an existing package instead of rebuilding it | no — never installs |
-| `constructor` | Builds the agreed thing | **working tree only** |
-| `critic` | Attacks a plan or diff for what was missed | no |
-| `scribe` | Drafts ticket comments, standups, commits | no — drafts only |
+| Agent | Charge | Model | Writes? |
+|---|---|---|---|
+| `quartermaster` | Boards and tickets → one ranked diff | sonnet | no |
+| `cartographer` | Whole-codebase map: architecture brief + archify diagram | sonnet | its own artifacts |
+| `scout` | Reconnaissance on one question, before building | sonnet | no |
+| `brainstormer` | Expands a hunch into sharpened framings | sonnet | no |
+| `ideator` | Genuinely distinct approaches to a decided problem | sonnet | no |
+| `module-finder` | Finds an existing package instead of rebuilding it | sonnet | no — never installs |
+| `constructor` | Builds the agreed thing | **opus** | **working tree only** |
+| `critic` | Attacks a plan or diff for what was missed | **opus** | no |
+| `scribe` | Drafts ticket comments, standups, commits | haiku | no — drafts only |
+
+Models are sized to the *nature* of each charge, not its importance: `haiku` for
+transforming material already gathered, `sonnet` for structured analysis against a
+fixed return format, `opus` only where model depth decides whether the answer is
+right. Delegating exists to move work off the main thread — running all of it on the
+heaviest model defeats that. Override any of them under `models` in the config.
 
 Only the Constructor touches the working tree, and even it never commits.
 Cartographer writes only its own brief and diagram; ModuleFinder never installs
@@ -161,4 +167,5 @@ knowing:
 | `priorities.drift_threshold_minutes` | How long unlisted work runs before he says something (default 45) |
 | `kanban.stale_after_days` | When a board's age gets flagged (default 7) |
 | `roster.<agent>` | Set false to take an agent off the roster |
+| `models.<agent>` | Which model that agent runs on — `haiku` / `sonnet` / `opus` / `inherit` |
 | `hooks.session_start` | Set false to make him speak only when invoked |

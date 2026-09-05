@@ -1,7 +1,7 @@
 ---
 name: ideator
 description: Divergent thinking for D.A.V.E. Generates and contrasts genuinely distinct approaches to a problem whose shape is understood but whose solution isn't settled. Use after reconnaissance and before implementation, when picking the approach is the actual decision. Read-only — it proposes, it does not build.
-model: inherit
+model: sonnet
 color: purple
 ---
 

@@ -63,6 +63,63 @@ Brainstormer (agent)  hunch          → sharpened framings
 D.A.V.E.'s own `Ideator` and `Constructor` agents are not in that chain at all —
 they operate on a decided problem inside an existing codebase.
 
+## Choosing a model
+
+Every delegation costs real money and real time, and the roster's whole purpose is
+to move work off the main thread — so sending a log-summarising task to the
+heaviest available model defeats the point. Each agent declares a default `model`
+in its own definition; **respect it** unless something below says otherwise.
+
+**Match the model to the nature of the work, not its importance.** A ticket comment
+for a critical outage is still text transformation. A refactor of a toy script is
+still code that has to be correct.
+
+| Weight | Agents | Why |
+|---|---|---|
+| `haiku` | Scribe | Transforms material already gathered. The log is the input, the wording is the output; almost no inference. |
+| `sonnet` | Quartermaster, Cartographer, Scout, Brainstormer, Ideator, ModuleFinder | Structured analysis, search, and generation against a clear spec with a fixed return format. The roster's default weight. |
+| `opus` | Constructor, Critic | The only two where model depth decides whether the answer is *right*. Constructor writes code someone ships; Critic finds the bug nobody else saw. A miss here costs far more than the tokens saved. |
+
+### The trap to avoid
+
+**A cheap model on a task it cannot do is not cheap — you pay twice**, once for the
+wrong answer and again for the rerun, plus whatever the wrong answer cost
+downstream. Downgrade to save resources, never to save them at the cost of a result
+you then have to redo.
+
+So escalate deliberately when a charge is unusually hard for its agent:
+
+- Scout on a subtle concurrency question, not a file lookup
+- Quartermaster reconciling contested sources where the *judgment* is the work
+- Cartographer on a large or unusually tangled codebase
+- Scribe reconstructing a week from a thin log, rather than restating a full one
+
+Pass `model` explicitly on the call when you escalate; it overrides the agent's
+frontmatter. **Say in your relay that you escalated and why** — an unexplained cost
+increase is exactly the kind of thing a user should not discover from a bill.
+
+Downgrade in the same deliberate way: a Critic pass over a ten-line diff, or a
+Constructor change that is genuinely mechanical, can drop a tier.
+
+### After a failed grade
+
+If a result fails grading (see below) because the agent was out of its depth —
+missed the question, asserted something unverified, produced mush — **re-run it on
+a heavier model rather than patching the output yourself.** Patching hides that the
+delegation failed, and you inherit an error you did not make. Re-running is honest
+and usually cheaper than the debugging that follows a quietly wrong answer.
+
+### Overrides
+
+Users can change any default in `~/.dave/config.json` under `models`. An entry
+there wins over the agent's frontmatter; an explicit `model` on the call wins over
+both. If a user has set a model for an agent, do not silently override it — if you
+think the charge needs more, say so and ask.
+
+This is a Claude Code concept. On pi and other harnesses without real subagents the
+roles run as focused passes in the main loop, so there is no per-agent model to
+choose.
+
 ## Briefing an agent
 
 **Never forward the user's raw request.** A subagent starts cold: it has none of

@@ -1,7 +1,7 @@
 ---
 name: constructor
 description: Implementation for D.A.V.E. Builds against an already-agreed plan — writes the code, runs the tests, reports honestly what landed and what didn't. Use when the approach is settled and the work is real. The only roster agent that writes to the working tree.
-model: inherit
+model: opus
 color: green
 ---
 

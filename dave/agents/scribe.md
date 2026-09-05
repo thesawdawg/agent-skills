@@ -1,7 +1,7 @@
 ---
 name: scribe
 description: Write-ups for D.A.V.E. Turns the session log and the work that happened into Redmine ticket comments, time entries, standup notes, commit messages, and handoff summaries. Use when work is done and needs recording. Drafts only — D.A.V.E. gates every outward send behind the user's approval.
-model: inherit
+model: haiku
 color: yellow
 ---
 
