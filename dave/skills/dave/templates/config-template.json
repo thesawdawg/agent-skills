@@ -1,0 +1,54 @@
+{
+  "_comment_user": "Who D.A.V.E. is working for. address_as is what he calls you — 'sir', your first name, or \"\" for none.",
+  "user": {
+    "name": "",
+    "address_as": "",
+    "role": "",
+    "work_hours": "09:00-17:00",
+    "timezone": ""
+  },
+
+  "_comment_personality": "wit: dry | light | off. pushback: firm | gentle | off. See references/persona.md.",
+  "personality": {
+    "wit": "dry",
+    "pushback": "firm"
+  },
+
+  "_comment_redmine": "authority: read-only | propose-writes | auto-routine. 'propose-writes' means D.A.V.E. actively drafts ticket updates and time logs but never sends one without a yes.",
+  "redmine": {
+    "enabled": true,
+    "authority": "propose-writes",
+    "base_url": "",
+    "my_user_id": "",
+    "open_ticket_filter": "assigned to me, status open",
+    "statuses_i_use": ["New", "In Progress", "Feedback", "Resolved", "Closed"]
+  },
+
+  "_comment_kanban": "Boards are pasted or screenshotted in by hand — D.A.V.E. has no API to them. List them so he knows what he is missing when one goes stale.",
+  "kanban": {
+    "boards": [],
+    "stale_after_days": 7
+  },
+
+  "_comment_priorities": "max_now caps how many things may sit in the Now section. drift_threshold_minutes is how long unlisted work runs before D.A.V.E. says something.",
+  "priorities": {
+    "max_now": 3,
+    "drift_threshold_minutes": 45,
+    "ranking_factors": ["commitment made to someone", "deadline", "blocking others", "effort", "energy fit"]
+  },
+
+  "_comment_hooks": "session_start injects your current focus and Now list as context at the start of every Claude Code session. Set false to make D.A.V.E. speak only when invoked.",
+  "hooks": {
+    "session_start": true
+  },
+
+  "_comment_roster": "Which specialist agents D.A.V.E. may delegate to. Remove any you don't want him reaching for.",
+  "roster": {
+    "quartermaster": true,
+    "scout": true,
+    "ideator": true,
+    "constructor": true,
+    "critic": true,
+    "scribe": true
+  }
+}

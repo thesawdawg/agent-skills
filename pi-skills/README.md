@@ -98,6 +98,10 @@ Extensions fix **mechanical** problems (lost shell state, tracking, structured o
 
 Guidance: for a small model doing QA/browser work, `pi-persistent-term` + `todo.ts` remove the most friction. For **web-pentest specifically, run it under `sandbox/` + `permission-gate.ts`** regardless of model size. There's also a third-party [Agent Safehouse sandbox analysis of pi](https://agent-safehouse.dev/docs/agent-investigations/pi) if you want an outside read on the runtime.
 
+## Not in this directory: D.A.V.E.
+
+The `dave` orchestrator plugin at [`../dave`](../dave) is not a pi-first skill — it's built for Claude Code — but it does run on pi with its agents, commands, and hook remapped onto pi's prompt templates, role docs, and `AGENTS.md`. Its installer follows the conventions on this page (literal absolute paths, no reliance on shell state, a `--selftest`). See [`../dave/INSTALL-PI.md`](../dave/INSTALL-PI.md).
+
 ## Skills in this directory
 
 | Skill | Origin | Notes |
