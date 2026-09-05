@@ -101,9 +101,10 @@ npx skills add tt-a1i/archify -g
 ```
 
 Without it you still get the written brief, and it says the diagram is missing
-rather than inventing a picture. Every
-outward write — Redmine status, comment, time log — is drafted, shown in full, and
-sent only on an explicit yes for that specific write.
+rather than inventing a picture.
+
+Every outward write — Redmine status, comment, time log — is drafted, shown in full,
+and sent only on an explicit yes for that specific write.
 
 **A SessionStart hook** injects your current focus and Now list into every session,
 so D.A.V.E. is present from the first token rather than waiting to be summoned.
