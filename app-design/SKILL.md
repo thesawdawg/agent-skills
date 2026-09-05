@@ -1,6 +1,6 @@
 ---
 name: app-design
-description: Use when the user wants to design, understand, audit, or plan an application end-to-end. Triggers on "understand this codebase and improve it", "analyze this app and find bugs", "audit and plan next steps", "help me start a new project", "design a new app with me", "plan out development of X". Two modes — existing project (analyze → verify → test → triage → enhance) and new project (intent → stack → specs → plan). Uses the dogfood skill for runtime QA.
+description: Use when the user wants to understand, audit, or improve an application that already exists. Triggers on "understand this codebase and improve it", "analyze this app and find bugs", "audit and plan next steps", "what should I fix first". Question-driven lifecycle — analyze → verify with the user → test → triage → propose improvements. Uses the dogfood skill for runtime QA. For a project that does not exist yet, use the ideator skill instead.
 license: MIT
 metadata:
   version: 2.0.0
@@ -10,17 +10,17 @@ allowed-tools: read, write, edit, bash, grep, find, ls
 
 # App Design — Design & Build Lifecycle (pi edition)
 
-This skill walks the user through designing or improving an app. It is
-**question-driven**: you ask, the user answers, you act. There are two modes.
-**Always confirm which mode applies before you start.**
+This skill walks the user through understanding and improving an app **that
+already exists**. It is **question-driven**: you ask, the user answers, you act.
+Analyze → verify with the user → test → triage bugs → propose improvements.
 
-- **Existing project** — code already exists. Analyze → verify with user → test
-  → triage bugs → propose improvements.
-- **New project** — only an idea. Ask about intent → choose a stack together →
-  write a spec → write a plan.
+**For a project that does not exist yet, this is the wrong skill.** Hand off to
+[`ideator`](../ideator/SKILL.md), which starts the new-project chain:
+`/ideator` (brief) → `/constructor` (architecture) → `/datasecurer` (security and
+redundancy). Say so in one line and stop rather than starting here.
 
 See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked
-example, and the [top-level skills index](../USE_CASES.md). Mode A's Test
+example, and the [top-level skills index](../USE_CASES.md). The Test
 phase calls [`dogfood`](../dogfood/SKILL.md) directly for web apps.
 
 ## How to ask questions (important — read this)
@@ -36,7 +36,7 @@ plain text in your reply. Do it like this:
 
 Draw question wording from [references/question-bank.md](references/question-bank.md).
 
-## Rules for both modes
+## Rules
 
 1. **Verify assumptions** — don't act on a guess; ask.
 2. **Show your reasoning** — when you propose a stack/fix/refactor, give the
@@ -45,14 +45,16 @@ Draw question wording from [references/question-bank.md](references/question-ban
 4. **Write artifacts to disk** with the `write` tool, under
    `./app-design-output/` so they survive the session.
 
-## Step 0 — Pick the mode
+## Step 0 — Confirm this is the right skill
 
 1. If the user points at a folder/repo, or you are inside one with source files,
-   it is probably **existing project**. Confirm in one line:
+   you are in the right place. Confirm in one line:
    "This looks like an existing <type> app — I'll analyze it first. Correct?"
-2. If the user describes something to build that doesn't exist yet → **new project**.
-3. If unclear, ask: "Are we improving an existing codebase, or starting a new
-   project from scratch?" — then STOP and wait.
+2. If the user describes something to build that **doesn't exist yet**, stop and
+   redirect: "That's a new project — `/ideator` sharpens the idea into a brief,
+   then `/constructor` designs the architecture. Want me to hand off?"
+3. If unclear, ask: "Are we improving an existing codebase, or starting from
+   scratch?" — then STOP and wait.
 
 Then make the output folder:
 
@@ -62,7 +64,7 @@ mkdir -p app-design-output
 
 ---
 
-## Mode A — Existing Project
+## The lifecycle
 
 Full step-by-step playbook: read [references/existing-project.md](references/existing-project.md).
 Question wording: [references/question-bank.md](references/question-bank.md).
@@ -83,41 +85,52 @@ The five phases (do them in order, do not jump ahead):
 5. **Enhance** — Propose new features and refactors, each with value, effort,
    and risk. Save to `app-design-output/recommendations.md`. Let the user pick.
 
-## Mode B — New Project
+## New projects belong elsewhere
 
-Full step-by-step playbook: read [references/new-project.md](references/new-project.md).
-Question wording: [references/question-bank.md](references/question-bank.md).
+This skill used to carry a second mode for projects that did not exist yet. That
+work is now owned by a dedicated chain, which does it better because each stage
+produces an artifact the next one consumes:
 
-The four phases (in order):
+| Stage | Skill | Produces |
+|---|---|---|
+| Sharpen the idea | [`ideator`](../ideator/SKILL.md) | `ideator-output/project-brief.md` |
+| Design the build | [`constructor`](../constructor/SKILL.md) | architecture, folder structure, dependencies |
+| Secure it | [`datasecurer`](../datasecurer/SKILL.md) | threat model, security and redundancy plan |
 
-1. **Intent** — Ask until the problem, users, scope, and constraints are clear.
-   Do NOT propose a stack yet. Summarize intent back and get agreement.
-2. **Stack** — For each big choice (language, framework, datastore, hosting,
-   auth, key libraries), offer 2–3 options with trade-offs + a recommendation,
-   and **decide together**. Save to `app-design-output/stack-decisions.md`.
-3. **Specify** — Fill [templates/specifications-template.md](templates/specifications-template.md) into
-   `app-design-output/specifications.md`. Review with the user; revise.
-4. **Plan** — Fill [templates/development-plan.md](templates/development-plan.md) into
-   `app-design-output/development-plan.md`. Confirm the next action with the user.
+Redirect rather than improvising a parallel version of it.
+
+**One gap to be honest about:** that chain stops at the security plan. It does not
+produce a written specification or a milestone plan. If the user wants those after
+`/datasecurer`, this skill still owns that step — follow
+[references/spec-and-plan.md](references/spec-and-plan.md), which fills
+[templates/specifications-template.md](templates/specifications-template.md) and
+[templates/development-plan.md](templates/development-plan.md) *from the chain's
+artifacts* rather than re-interviewing a user who has already answered these
+questions once.
 
 ---
 
 ## Artifacts (write these with the `write` tool)
 
-| File | Mode | Purpose |
-|------|------|---------|
-| `app-design-output/app-model.md` | A | Verified purpose, structure, flows |
-| `dogfood-output/report.md` | A | Bug report from the dogfood QA run |
-| `app-design-output/recommendations.md` | A | Approved fixes, features, refactors |
-| `app-design-output/stack-decisions.md` | B | Stack choices + reasoning |
-| `app-design-output/specifications.md` | B | Full spec |
-| `app-design-output/development-plan.md` | B | Milestones + ordered tasks |
+| File | Purpose |
+|------|---------|
+| `app-design-output/app-model.md` | Verified purpose, structure, flows |
+| `dogfood-output/report.md` | Bug report from the dogfood QA run |
+| `app-design-output/recommendations.md` | Approved fixes, features, refactors |
+
+Only if the user asks for them after the new-project chain has run:
+
+| File | Purpose |
+|------|---------|
+| `app-design-output/specifications.md` | Full spec, from the template here |
+| `app-design-output/development-plan.md` | Milestones + ordered tasks |
 
 ## Reminders for staying on track
 
 - Keep a short checklist of the phases in your reply and tick them off as you
   go (pi has no to-do tool, so just write the list in text).
-- Mode A: never skip Verify — testing the wrong assumed intent makes fake bugs.
-- Mode B: never skip Intent — a stack chosen before requirements is a guess.
+- Never skip Verify — testing the wrong assumed intent manufactures fake bugs.
+- If it turns out there is no existing code, stop and hand off to `/ideator`
+  rather than quietly becoming a new-project skill.
 - If [`/skill:dogfood`](../dogfood/SKILL.md) or its browser script isn't usable, fall back to the
   non-browser runtime checks in [references/test-battery.md](references/test-battery.md).
