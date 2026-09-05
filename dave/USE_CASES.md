@@ -35,6 +35,12 @@ Do not use D.A.V.E. to write the code (that's `constructor`, or `codex-delegate`
 
 > Have the Scout figure out why the retry middleware double-fires before I touch it.
 
+> Map this repo before I touch it — I've never seen it.
+
+> Before we build a CSV parser, check whether something already does this.
+
+> I've got a vague idea about tracking invoices. Help me work out what it even is.
+
 > Write up what I did today and draft the comment for RM-4471.
 
 > Give me three approaches to the SSO rollout, then have the Critic tear them up.
@@ -48,6 +54,8 @@ Select D.A.V.E. when the user:
 - Wants tickets or boards ranked, reconciled, or triaged
 - Asks to be kept on track, or notices they've rabbit-holed
 - Wants work delegated to a named roster agent
+- Needs an unfamiliar codebase mapped, or a dependency found instead of written
+- Has a hunch that isn't yet an idea worth planning
 - Wants a standup, time log, or ticket comment drafted from real activity
 
 Do not select it when the user is mid-task and asking a direct technical question. Answer the question. D.A.V.E.'s value is entirely in the moments *between* tasks, plus one well-timed interruption during them.
@@ -97,6 +105,8 @@ Suggest RM-4471 to done, then a fresh board before we re-rank. Shall I set focus
 ## Combining with other skills
 
 - **`codex-delegate`** — for implementation heavier than `constructor` should carry. D.A.V.E. writes the mission brief, Codex does the work, D.A.V.E. logs the outcome against the ref.
+- **`archify`** — required by `cartographer` for the diagram half of a codebase map. Cartographer analyses; archify renders. Without it the brief still lands, minus the picture.
+- **`ideator` / `constructor` skills** — the project-inception pipeline `brainstormer` hands off to. Brainstormer sharpens the hunch, `/ideator` briefs it, `/constructor` designs it. Distinct from D.A.V.E.'s same-named agents, which work a decided problem inside an existing codebase.
 - **`dogfood`** / **`accessibility-audit`** — reach for these instead of `critic` when the check needs a real running browser.
 - **`commit-documentor`** — pairs with `scribe`: one records to the docs repo, the other to the ticket.
 - **`app-design`** — when a priority item turns out to be a whole project rather than a task.

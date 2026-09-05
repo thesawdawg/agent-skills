@@ -70,13 +70,22 @@ what does and doesn't carry over. The short version:
 | Agent | Charge | Writes? |
 |---|---|---|
 | `quartermaster` | Boards and tickets → one ranked diff | no |
-| `scout` | Reconnaissance before building | no |
-| `ideator` | Genuinely distinct approaches | no |
+| `cartographer` | Whole-codebase map: architecture brief + archify diagram | its own artifacts |
+| `scout` | Reconnaissance on one question, before building | no |
+| `brainstormer` | Expands a hunch into sharpened framings | no |
+| `ideator` | Genuinely distinct approaches to a decided problem | no |
+| `module-finder` | Finds an existing package instead of rebuilding it | no — never installs |
 | `constructor` | Builds the agreed thing | **working tree only** |
 | `critic` | Attacks a plan or diff for what was missed | no |
 | `scribe` | Drafts ticket comments, standups, commits | no — drafts only |
 
-Only the Constructor touches the working tree, and even it never commits. Every
+Only the Constructor touches the working tree, and even it never commits.
+Cartographer writes only its own brief and diagram; ModuleFinder never installs
+anything.
+
+`cartographer` needs the [`archify`](https://github.com/tt-a1i/archify) skill
+installed for the diagram — without it you still get the written brief, and it says
+so rather than inventing a picture. Every
 outward write — Redmine status, comment, time log — is drafted, shown in full, and
 sent only on an explicit yes for that specific write.
 

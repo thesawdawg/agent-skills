@@ -260,7 +260,7 @@ do_selftest() {
   check "dave.sh installed executable"  "[ -x '$tmp/skills/dave/scripts/dave.sh' ]"
   check "templates copied"              "[ -f '$tmp/skills/dave/templates/config-template.json' ]"
   check "redmine-rest reference copied" "[ -f '$tmp/skills/dave/references/redmine-rest.md' ]"
-  check "6 roles converted"             "[ \$(ls '$tmp/skills/dave/references/roles' | wc -l) -eq 6 ]"
+  check "9 roles converted"             "[ \$(ls '$tmp/skills/dave/references/roles' | wc -l) -eq 9 ]"
   check "7 prompts converted"           "[ \$(ls '$tmp/prompts' | wc -l) -eq 7 ]"
   check "role frontmatter stripped"     "! grep -q '^model: ' '$tmp/skills/dave/references/roles/scout.md'"
   check "role name kept"                "grep -q '^name: scout' '$tmp/skills/dave/references/roles/scout.md'"

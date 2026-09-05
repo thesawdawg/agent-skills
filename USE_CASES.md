@@ -105,7 +105,7 @@ Not for a one-off README edit with no commit-driven review, and not for reviewin
 
 ## 9. `dave` *(plugin)*
 
-D.A.V.E. — Digital Assistant for Various Endeavors. An orchestrator, not a doer: he keeps one ranked priority list in `~/.dave/priorities.md` spanning Redmine tickets and hand-pasted kanban boards, notices when the session drifts off it, and delegates the deep work to a six-agent roster (Quartermaster, Scout, Ideator, Constructor, Critic, Scribe).
+D.A.V.E. — Digital Assistant for Various Endeavors. An orchestrator, not a doer: he keeps one ranked priority list in `~/.dave/priorities.md` spanning Redmine tickets and hand-pasted kanban boards, notices when the session drifts off it, and delegates the deep work to a nine-agent roster (Quartermaster, Cartographer, Scout, Brainstormer, Ideator, ModuleFinder, Constructor, Critic, Scribe).
 
 > What should I actually be working on? — and tell me if I wander off it.
 

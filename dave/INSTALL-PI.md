@@ -19,7 +19,7 @@ two capabilities are genuinely absent rather than merely different.
 | Orchestrator skill | `skills/dave/SKILL.md` | ✅ direct — `/skill:dave` |
 | State layer (`dave.sh`) | bash + `jq` | ✅ direct — no harness features used |
 | 7 commands | `/dave:brief`, … | ✅ mapped to prompt templates — `/dave-brief`, … |
-| 6 agents | real subagents | ⚠️ **role reference docs**, run as focused passes — unless the official `subagent/` extension is installed |
+| 9 agents | real subagents | ⚠️ **role reference docs**, run as focused passes — unless the official `subagent/` extension is installed |
 | Redmine | MCP server | ⚠️ **keep the MCP** via `pi-mcp-adapter`, or fall back to REST over `curl` |
 | SessionStart hook | injects focus automatically | ❌ **no hooks in pi** — run `/dave-brief` yourself, or use the `AGENTS.md` stanza |
 
@@ -97,7 +97,7 @@ It is idempotent — re-running overwrites managed files and never duplicates th
   skills/dave/
     SKILL.md                     /skill:dave  (+ an appended "Running under pi" section)
     references/*.md              incl. redmine-rest.md
-    references/roles/*.md        the 6 agents, Claude-only frontmatter stripped
+    references/roles/*.md        the 9 agents, Claude-only frontmatter stripped
     templates/, scripts/dave.sh
     README.md, USE_CASES.md      copied so the skill's own links resolve
   prompts/dave-*.md              /dave-brief /dave-focus /dave-intake /dave-check

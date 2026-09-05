@@ -1,6 +1,6 @@
 {
   "name": "dave",
-  "description": "D.A.V.E. - Digital Assistant for Various Endeavors. An orchestrator that maintains a single ranked priority list across Redmine tickets and kanban boards, detects when work drifts off that list, and delegates to a roster of specialist agents (Quartermaster, Scout, Ideator, Constructor, Critic, Scribe).",
+  "description": "D.A.V.E. - Digital Assistant for Various Endeavors. An orchestrator that maintains a single ranked priority list across Redmine tickets and kanban boards, detects when work drifts off that list, and delegates to a roster of specialist agents (Quartermaster, Cartographer, Scout, Brainstormer, Ideator, ModuleFinder, Constructor, Critic, Scribe).",
   "version": "0.1.0",
   "author": {
     "name": "thesawdawg"
