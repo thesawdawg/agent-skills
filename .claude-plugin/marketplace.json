@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "agent-skills",
+  "description": "Personal Claude Code skills and plugins by thesawdawg",
+  "owner": {
+    "name": "thesawdawg"
+  },
+  "plugins": [
+    {
+      "name": "dave",
+      "description": "D.A.V.E. (Digital Assistant for Various Endeavors) - an orchestrator that holds your priority list, keeps you on the ticket you actually meant to work on, and delegates to a roster of specialist agents.",
+      "author": {
+        "name": "thesawdawg"
+      },
+      "source": "./dave",
+      "category": "productivity",
+      "homepage": "https://github.com/thesawdawg/agent-skills/tree/main/dave"
+    }
+  ]
+}

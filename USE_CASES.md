@@ -2,6 +2,8 @@
 
 This is the index for the top-level skills in this repo. `dogfood`, `dependabot-validator`, and `pr-grill-me` are written to the portable four-tool baseline (Read/Write/Edit/Bash) and run under any harness; the rest assume a richer toolset — a real headless browser, `Agent` subagents, `WebSearch`, etc. The separate `pi-skills/` collection holds harness-portable skills adapted from hermes-agent (see `pi-skills/USE_CASES.md` for those).
 
+Alongside them sits the `dave` **plugin** — an orchestrator that bundles a skill with its own agent roster, `/dave:*` commands, and a session hook (see [`dave/README.md`](dave/README.md)).
+
 Each skill below has its own `USE_CASES.md` with full detail: trigger phrases, inputs to establish, an example model plan, and a sample output. **This file is a chooser and cross-reference, not a duplicate** — when a skill's own file changes, come back here only if the one-line summary or chooser table needs updating.
 
 ## How to use this guide
@@ -30,6 +32,7 @@ That maps to `codex-delegate` → `dogfood`, in that order — see "Combining sk
 | Design, audit, or plan an application end-to-end — existing codebase or new idea | [`app-design`](app-design/USE_CASES.md) |
 | Run a WCAG conformance audit of a live web app, citing specific success criteria | [`accessibility-audit`](accessibility-audit/USE_CASES.md) |
 | Check whether commits you just made need documentation updates, and publish them to a docs repo (or an in-repo docs tree) | [`commit-documentor`](commit-documentor/USE_CASES.md) |
+| Decide what to work on, stay on it, and orchestrate the other agents around one ranked priority list | [`dave`](dave/USE_CASES.md) *(plugin)* |
 
 ---
 
@@ -100,6 +103,16 @@ Not for a one-off README edit with no commit-driven review, and not for reviewin
 
 ---
 
+## 9. `dave` *(plugin)*
+
+D.A.V.E. — Digital Assistant for Various Endeavors. An orchestrator, not a doer: he keeps one ranked priority list in `~/.dave/priorities.md` spanning Redmine tickets and hand-pasted kanban boards, notices when the session drifts off it, and delegates the deep work to a six-agent roster (Quartermaster, Scout, Ideator, Constructor, Critic, Scribe).
+
+> What should I actually be working on? — and tell me if I wander off it.
+
+Unlike everything else in this index, this is a **plugin**: it ships agents, `/dave:*` commands, and a SessionStart hook alongside its skill. It also runs under the [pi](https://pi.dev) harness with those pieces remapped — see [`dave/INSTALL-PI.md`](dave/INSTALL-PI.md). Reach for it when the question is *which work and in what order*; reach for the other skills when the question is the work itself. See [`dave/USE_CASES.md`](dave/USE_CASES.md).
+
+---
+
 ## Combining skills
 
 These skills are deliberately narrow — real workflows often chain them.
@@ -133,6 +146,15 @@ These skills are deliberately narrow — real workflows often chain them.
 1. `accessibility-audit` finds WCAG violations with specific success criteria and affected elements.
 2. `codex-delegate` implements the fixes.
 3. `accessibility-audit` re-runs against the same pages to confirm the violations are resolved.
+
+**Priority-driven day (D.A.V.E. above the rest):**
+1. `dave` reconciles Redmine and your board into one ranked list, and you set focus on the top item.
+2. D.A.V.E.'s `scout` briefs the unknowns before anything gets built.
+3. `codex-delegate` (or D.A.V.E.'s `constructor`) implements the agreed approach.
+4. `dogfood` or `accessibility-audit` verifies it live, if it's UI-facing.
+5. D.A.V.E.'s `scribe` drafts the ticket comment and time entry — you approve each write before it goes out.
+
+> Reconcile my board with Redmine, put me on the top item, and at the end of the day write up what I actually did for the ticket.
 
 Don't chain skills just because they exist — each step should still pass the "is this substantial enough to warrant it" bar from that skill's own `USE_CASES.md`.
 
