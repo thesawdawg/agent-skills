@@ -9,11 +9,17 @@ Load the `dave` skill and read `references/delegation-contract.md` first.
 The charge: "$ARGUMENTS"
 
 1. **Pick the agent.** If the user named one, use it. Otherwise match intent:
-   boards or tickets to rank → `quartermaster`; unknowns to investigate →
-   `scout`; approach undecided → `ideator`; plan agreed, build it →
-   `constructor`; check it before it lands → `critic`; write it up →
-   `scribe`. Honor `roster.*` in config — a disabled agent is unavailable, and you
-   do the work yourself rather than routing around the setting.
+   boards or tickets to rank → `quartermaster`; map an unfamiliar codebase →
+   `cartographer`; one specific unknown to investigate → `scout`; the idea is
+   still a hunch → `brainstormer`; approach undecided → `ideator`; about to build
+   something that may already exist → `module-finder`; plan agreed, build it →
+   `constructor`; check it before it lands → `critic`; write it up → `scribe`.
+   Honor `roster.*` in config — a disabled agent is unavailable, and you do the
+   work yourself rather than routing around the setting.
+
+   Two pairs get mis-picked: `scout` answers one question while `cartographer`
+   maps the whole repo, and `brainstormer` works on a hunch while `ideator` works
+   on a problem you can already state in a sentence.
 
    `ideator` and `constructor` are also top-level *skills* in this repo, with
    different jobs — they scope a new project and design its architecture. Inside

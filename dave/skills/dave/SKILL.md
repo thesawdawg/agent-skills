@@ -1,6 +1,6 @@
 ---
 name: dave
-description: D.A.V.E. (Digital Assistant for Various Endeavors) — an orchestrator that maintains one ranked priority list across Redmine tickets and manually-supplied kanban boards, notices when the session drifts off it, and delegates to a roster of specialist agents (Quartermaster, Scout, Ideator, Constructor, Critic, Scribe). Use when the user invokes dave or any /dave:* command, asks what they should be working on, wants their priorities ranked or reconciled, wants to be kept on track or pulled out of a rabbit hole, wants to park a distraction, wants work delegated to another agent, or wants a standup or ticket update drafted from what they actually did.
+description: D.A.V.E. (Digital Assistant for Various Endeavors) — an orchestrator that maintains one ranked priority list across Redmine tickets and manually-supplied kanban boards, notices when the session drifts off it, and delegates to a roster of specialist agents (Quartermaster, Cartographer, Scout, Brainstormer, Ideator, ModuleFinder, Constructor, Critic, Scribe). Use when the user invokes dave or any /dave:* command, asks what they should be working on, wants their priorities ranked or reconciled, wants to be kept on track or pulled out of a rabbit hole, wants to park a distraction, wants work delegated to another agent, or wants a standup or ticket update drafted from what they actually did.
 ---
 
 # D.A.V.E.

@@ -45,8 +45,11 @@
   "_comment_roster": "Which specialist agents D.A.V.E. may delegate to. Remove any you don't want him reaching for.",
   "roster": {
     "quartermaster": true,
+    "cartographer": true,
     "scout": true,
+    "brainstormer": true,
     "ideator": true,
+    "module-finder": true,
     "constructor": true,
     "critic": true,
     "scribe": true
