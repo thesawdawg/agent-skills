@@ -41,8 +41,9 @@ Requires `jq`.
 
 ### Other harnesses
 
-Running [pi](https://pi.dev) instead? pi has no plugin system, no MCP, and no
-hooks, so the pieces map onto its own mechanisms — see
+Running [pi](https://pi.dev) instead? pi has no plugin system and no hooks, and no
+MCP unless you add the `pi-mcp-adapter` extension — so the pieces map onto its own
+mechanisms — see
 **[INSTALL-PI.md](INSTALL-PI.md)** for the full guide and the honest account of
 what does and doesn't carry over. The short version:
 

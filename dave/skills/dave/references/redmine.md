@@ -3,10 +3,12 @@
 Redmine reaches D.A.V.E. through an MCP server whose exact tool names vary by
 install. **Never assume a tool name.**
 
-> On a harness with no MCP support — pi, and anything else whose core is just
-> Read/Write/Edit/Bash — use [redmine-rest.md](redmine-rest.md) instead: the same
-> operations over `curl` against Redmine's REST API. Every approval rule below
-> still applies there, unchanged.
+> **On pi**, MCP is not built in. With the `pi-mcp-adapter` extension installed,
+> everything below applies as written — only discovery changes: the proxy tool
+> (`mcp({ search: "redmine issue" })`) replaces `ToolSearch`. Without it, use
+> [redmine-rest.md](redmine-rest.md) — the same operations over `curl` against
+> Redmine's REST API. Every approval rule below applies in all three cases,
+> unchanged. See [INSTALL-PI.md](../../../INSTALL-PI.md).
  Discover what is actually present, once per
 session, before claiming any Redmine capability:
 

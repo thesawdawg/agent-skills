@@ -20,7 +20,7 @@ two capabilities are genuinely absent rather than merely different.
 | State layer (`dave.sh`) | bash + `jq` | ✅ direct — no harness features used |
 | 7 commands | `/dave:brief`, … | ✅ mapped to prompt templates — `/dave-brief`, … |
 | 6 agents | real subagents | ⚠️ **role reference docs**, run as focused passes — unless the official `subagent/` extension is installed |
-| Redmine | MCP server | ⚠️ **REST over `curl`** — pi has no MCP at all |
+| Redmine | MCP server | ⚠️ **keep the MCP** via `pi-mcp-adapter`, or fall back to REST over `curl` |
 | SessionStart hook | injects focus automatically | ❌ **no hooks in pi** — run `/dave-brief` yourself, or use the `AGENTS.md` stanza |
 
 The two ⚠️ rows still work; they take a different route. The ❌ row does not exist
@@ -124,13 +124,19 @@ If you install the official `subagent/` extension from the
 [pi repo](https://github.com/earendil-works/pi/tree/main/packages/coding-agent/examples/extensions),
 dispatch real subagents instead and the contract works as written.
 
-**2. No MCP, so no Redmine MCP.** Use
-[skills/dave/references/redmine-rest.md](skills/dave/references/redmine-rest.md) —
-plain `curl` against Redmine's REST API, with the API key in `~/.dave/.redmine-key`
-(mode 600), never in `config.json`. **Every approval rule from
-[redmine.md](skills/dave/references/redmine.md) still applies**: exact payload
-shown, one explicit yes per write, hours never invented. The transport changed; the
-gate did not.
+**2. No *built-in* MCP — but you can keep the Redmine MCP.** pi ships no MCP
+support by design (tool definitions are token-heavy: a single server routinely
+costs 13–18k tokens of context before you've said anything). The
+[`pi-mcp-adapter`](https://github.com/nicobailon/pi-mcp-adapter) extension restores
+it without that cost — see [Keeping the Redmine MCP](#keeping-the-redmine-mcp)
+below. If you'd rather not add a third-party extension, D.A.V.E. works over
+Redmine's REST API instead:
+[skills/dave/references/redmine-rest.md](skills/dave/references/redmine-rest.md).
+
+Either way, **every approval rule from
+[redmine.md](skills/dave/references/redmine.md) applies**: exact payload shown, one
+explicit yes per write, hours never invented. The transport changes; the gate does
+not.
 
 **3. Shell state does not persist between Bash calls.** Never `export DAVE_HOME` in
 one step and rely on it in the next — it will be empty and the failure is quiet.
@@ -152,6 +158,108 @@ automatic injection of live state — it depends on the model choosing to act on
 which a small model often won't. On pi, treat `/dave-brief` as a habit rather than
 a guarantee.
 
+## Keeping the Redmine MCP
+
+pi omits MCP deliberately: tool definitions are token-heavy, and a couple of
+servers can burn a large slice of the context window before you type anything. The
+third-party [`pi-mcp-adapter`](https://github.com/nicobailon/pi-mcp-adapter)
+extension solves that by exposing **one proxy tool of roughly 200 tokens** instead
+of every server's full tool list. The agent searches for what it needs on demand,
+and a server isn't started until a tool on it is actually called.
+
+That means D.A.V.E. can use the same Redmine MCP server you run under Claude Code,
+and [redmine.md](skills/dave/references/redmine.md) applies unchanged.
+
+```bash
+pi install npm:pi-mcp-adapter
+```
+
+Restart pi afterwards. Then define the server — the adapter reads standard MCP
+config files, so if you already have one it may need no setup at all. Precedence,
+later winning:
+
+| Path | Scope |
+|---|---|
+| `~/.config/mcp/mcp.json` | user-global, shared with other tools |
+| `~/.agents/mcp.json`, `~/.agents/mcp/mcp.json` | tool-agnostic global |
+| `~/.pi/agent/mcp.json` | pi global override |
+| `.mcp.json` | project-local, shared |
+| `.pi/mcp.json` | pi project override |
+
+Use the *same server definition* you already use in Claude Code. Stdio and HTTP
+both work:
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "npx",
+      "args": ["-y", "<your-redmine-mcp-package>"],
+      "env": { "REDMINE_URL": "${REDMINE_URL}", "REDMINE_API_KEY": "!cat ~/.dave/.redmine-key" }
+    }
+  }
+}
+```
+
+`${VAR}` and `$env:VAR` interpolate environment variables, and a value starting
+with `!` runs a command when the server connects (`!!` escapes a literal `!`). That
+`!cat` form keeps the API key in `~/.dave/.redmine-key` at mode 600 rather than in
+a config file — the same handling
+[redmine-rest.md](skills/dave/references/redmine-rest.md) uses. For HTTP servers,
+`bearerTokenEnv` reads a token from a named environment variable.
+
+`/mcp setup` scaffolds a config or adopts an existing one; `/mcp reconnect` reloads
+servers; `/mcp-auth <server>` runs OAuth, storing credentials in the OS credential
+store rather than a plaintext file.
+
+### Enforce the write gate at the harness level
+
+This is worth doing even though D.A.V.E. already gates writes himself. The adapter
+supports `approveTools`, which requires confirmation before a matching tool runs —
+turning "he is instructed not to write without asking" into "he *cannot*":
+
+```json
+{
+  "mcpServers": {
+    "redmine": {
+      "command": "npx",
+      "args": ["-y", "<your-redmine-mcp-package>"],
+      "approveTools": ["*create*", "*update*", "*delete*", "*time_entr*"]
+    }
+  }
+}
+```
+
+**Confirm the real tool names before relying on those patterns** — they vary by
+server, and a pattern that matches nothing silently protects nothing. List them
+with `mcp({ search: "redmine" })` and inspect one with
+`mcp({ describe: "<tool_name>" })`.
+
+### Discovery under the adapter
+
+D.A.V.E.'s skill says to discover Redmine tools with `ToolSearch` — that's the
+Claude Code form. Under the adapter, the equivalent is the proxy tool:
+
+```
+mcp({ search: "redmine issue" })          # find the available tools
+mcp({ describe: "<tool_name>" })          # inspect one before calling it
+mcp({ tool: "<tool_name>", args: { ... } })
+```
+
+The rule underneath is the same in both harnesses and does not bend: **never assume
+a tool name.** Discover, then call.
+
+### Before you install it
+
+`pi-mcp-adapter` is a **third-party** extension (`nicobailon/pi-mcp-adapter`), not
+one of the official examples in the pi repo. Installing any pi extension runs
+arbitrary TypeScript with your full user permissions. Read the source, pin a
+version, and weigh it against the REST route, which adds no extension at all and
+uses only `curl`. It does ship real safeguards — lazy connections, OAuth
+credentials in the OS credential store, URL-bound tokens, output truncation, and no
+auto-launching of anything — but that is a reason to consider it, not a substitute
+for looking.
+
 ## Optional extensions that close the gaps
 
 A pi extension is arbitrary TypeScript running with your full user permissions —
@@ -160,6 +268,7 @@ the pi repo; read the source of community ones and pin a version.
 
 | Extension | Closes |
 |---|---|
+| `pi-mcp-adapter` (third-party) | Difference 2 — keeps the Redmine MCP, ~200 tokens |
 | `subagent/` (official) | Difference 1 — real delegation |
 | `pi-persistent-term` (community) | Difference 3 — shell state survives |
 | `todo.ts` (official) | Step drift across D.A.V.E.'s longer multi-phase runs |
