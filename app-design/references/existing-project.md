@@ -1,4 +1,4 @@
-# Existing Project Playbook (Mode A)
+# Existing Project Playbook
 
 > Referenced from [SKILL.md](../SKILL.md).
 

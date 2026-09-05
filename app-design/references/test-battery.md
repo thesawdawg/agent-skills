@@ -1,4 +1,4 @@
-# Test Battery (Mode A, Phase 3)
+# Test Battery (Phase 3 — Test)
 
 > Referenced from [SKILL.md](../SKILL.md) and [existing-project.md](existing-project.md).
 
