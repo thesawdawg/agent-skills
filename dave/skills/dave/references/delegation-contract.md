@@ -11,7 +11,7 @@ know what you were doing an hour ago.
 | Agent | Charge | Reach for it when |
 |---|---|---|
 | **Quartermaster** | Intake and triage. Parses pasted boards and Redmine results into a ranked diff. | Boards or ticket dumps need turning into a list |
-| **Cartographer** | Maps a whole codebase — architecture brief plus an archify diagram. | The repo's shape is unknown and a change will cross modules |
+| **Cartographer** | Maps a codebase top-down: purpose, then major areas. Drills only on request. | The repo's shape is unknown and a change will cross modules |
 | **Scout** | Reconnaissance. Researches one unknown and returns a briefing. | A ticket's shape isn't clear yet — *before* any building |
 | **Brainstormer** | Pre-ideation divergence. Expands a hunch into sharpened framings. | There's an idea but not yet one worth briefing |
 | **Ideator** | Divergent. Generates and contrasts genuinely distinct approaches. | The problem is understood; the approach isn't |
@@ -23,8 +23,15 @@ know what you were doing an hour ago.
 Two pairs are easy to confuse, and mis-delegating between them wastes a whole pass:
 
 - **Cartographer vs Scout.** Scout answers *one question* — narrow and deep.
-  Cartographer draws *the whole map* — broad and reusable. "Why does this
+  Cartographer explains *structure* — what exists and how it relates. "Why does this
   double-fire" is Scout; "what is this codebase" is Cartographer.
+
+  Cartographer maps **top-down and stops**: purpose plus 5–9 major areas, then an
+  offer to drill. Name a depth in the charge when you know it — `L1` for the default
+  overview, `L2 <area>` for one area's internals, `L3 <path>` to trace one flow.
+  An ambiguous charge gets the overview only, never an exhaustive survey. When the
+  drill menu comes back, put it to the user rather than picking for them; re-invoke
+  with the narrowed charge.
 - **Brainstormer vs Ideator.** Brainstormer works on a *hunch* and asks what the
   thing should even be. Ideator works on a *decided problem* and asks how to solve
   it. If you can state the problem in one sentence, you are past Brainstormer.
@@ -147,7 +154,7 @@ The default pipeline, with gates the user passes through:
 
 ```
 Quartermaster ─→ [ranked list]    ─→ USER approves
-Cartographer  ─→ [map + diagram]  ─→ USER: is this the system?      (unfamiliar repo)
+Cartographer  ─→ [L1 + menu]      ─→ USER picks an area, or stops    (unfamiliar repo)
 Brainstormer  ─→ [framings]       ─→ USER picks a direction         (idea-stage only)
       Scout   ─→ [briefing]       ─→ USER: is this the real problem?
     Ideator   ─→ [3 approaches]   ─→ USER picks one
@@ -160,7 +167,8 @@ Constructor   ─→ [the work]       ─→ USER reviews
 
 The marked stages are conditional — most work needs three or four of these, not
 ten. Cartographer runs once per unfamiliar repo, not per ticket; its brief is worth
-keeping in the mission and re-reading rather than regenerating.
+keeping in the mission and re-reading rather than regenerating. A drill (`L2`/`L3`)
+is a second, cheaper call against an area the overview already named — not a rerun.
 
 Skip stages freely — most work does not need all seven. Never skip the **user
 gates**, and never chain two agents without the user seeing what came back from

@@ -70,7 +70,7 @@ what does and doesn't carry over. The short version:
 | Agent | Charge | Model | Writes? |
 |---|---|---|---|
 | `quartermaster` | Boards and tickets → one ranked diff | sonnet | no |
-| `cartographer` | Whole-codebase map: architecture brief + archify diagram | sonnet | its own artifacts |
+| `cartographer` | Codebase map, top-down: purpose → areas → drill on request | sonnet | its own artifacts |
 | `scout` | Reconnaissance on one question, before building | sonnet | no |
 | `brainstormer` | Expands a hunch into sharpened framings | sonnet | no |
 | `ideator` | Genuinely distinct approaches to a decided problem | sonnet | no |
@@ -89,9 +89,19 @@ Only the Constructor touches the working tree, and even it never commits.
 Cartographer writes only its own brief and diagram; ModuleFinder never installs
 anything.
 
-`cartographer` needs the [`archify`](https://github.com/tt-a1i/archify) skill
-installed for the diagram — without it you still get the written brief, and it says
-so rather than inventing a picture. Every
+`cartographer` maps **top-down and stops**: what the system is for, then its 5–9
+major areas, then an offer to drill into one. It does not survey an entire
+repository on an ambiguous request — that produces a document nobody reads and is
+stale in a week. Ask for `L2 <area>` or `L3 <path>` when you want depth.
+
+Its diagram half needs the [`archify`](https://github.com/tt-a1i/archify) skill:
+
+```bash
+npx skills add tt-a1i/archify -g
+```
+
+Without it you still get the written brief, and it says the diagram is missing
+rather than inventing a picture. Every
 outward write — Redmine status, comment, time log — is drafted, shown in full, and
 sent only on an explicit yes for that specific write.
 

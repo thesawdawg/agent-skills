@@ -10,7 +10,9 @@ The charge: "$ARGUMENTS"
 
 1. **Pick the agent.** If the user named one, use it. Otherwise match intent:
    boards or tickets to rank → `quartermaster`; map an unfamiliar codebase →
-   `cartographer`; one specific unknown to investigate → `scout`; the idea is
+   `cartographer` (top-down; pass `L2 <area>` or `L3 <path>` for depth, otherwise
+   it returns the overview plus a drill menu to put to the user); one specific
+   unknown to investigate → `scout`; the idea is
    still a hunch → `brainstormer`; approach undecided → `ideator`; about to build
    something that may already exist → `module-finder`; plan agreed, build it →
    `constructor`; check it before it lands → `critic`; write it up → `scribe`.

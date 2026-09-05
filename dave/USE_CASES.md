@@ -105,7 +105,7 @@ Suggest RM-4471 to done, then a fresh board before we re-rank. Shall I set focus
 ## Combining with other skills
 
 - **`codex-delegate`** — for implementation heavier than `constructor` should carry. D.A.V.E. writes the mission brief, Codex does the work, D.A.V.E. logs the outcome against the ref.
-- **`archify`** — required by `cartographer` for the diagram half of a codebase map. Cartographer analyses; archify renders. Without it the brief still lands, minus the picture.
+- **`archify`** — required by `cartographer` for the diagram half of a codebase map (`npx skills add tt-a1i/archify -g`). Cartographer analyses and hands over topology; archify owns the schema, layout and validation. Without it the brief still lands, minus the picture.
 - **`ideator` / `constructor` skills** — the project-inception pipeline `brainstormer` hands off to. Brainstormer sharpens the hunch, `/ideator` briefs it, `/constructor` designs it. Distinct from D.A.V.E.'s same-named agents, which work a decided problem inside an existing codebase.
 - **`dogfood`** / **`accessibility-audit`** — reach for these instead of `critic` when the check needs a real running browser.
 - **`commit-documentor`** — pairs with `scribe`: one records to the docs repo, the other to the ticket.
