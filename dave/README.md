@@ -88,7 +88,11 @@ config turns it off.
 ## State
 
 Everything durable lives in `~/.dave/` (override with `DAVE_HOME`) as plain
-markdown and JSON you can read and hand-edit. `skills/dave/scripts/dave.sh` is the
+markdown and JSON you can read and hand-edit. It sits beside `~/.agents/` rather
+than inside it deliberately: `~/.agents/` holds *configuration* that skills read,
+while this is a working document you edit yourself every day and will want to find,
+back up, and version on its own. Set `DAVE_HOME=~/.agents/dave` if you'd rather
+keep everything under one roof. `skills/dave/scripts/dave.sh` is the
 only thing that writes there.
 
 ```

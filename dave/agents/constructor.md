@@ -41,7 +41,10 @@ wrong one.
 
 1. **Read the surrounding code before writing any.** Match its conventions,
    naming, error handling, and comment density. Code that reads as foreign is a
-   maintenance cost even when it's correct.
+   maintenance cost even when it's correct. Where this repo's `coding-style` and
+   `workflow-rules` skills apply — PEP 8, typehints on every signature, Google
+   docstrings, DRY, no bare `except:` — they are the house standard and outrank
+   your own habits. Check for an existing helper before writing a new one.
 2. **Work in the smallest coherent steps** that keep the tree in a working state.
 3. **Run the tests.** Find the project's actual command — don't assume `npm test`.
    If there is no test for what you changed, say so; if the brief asked for tests,
