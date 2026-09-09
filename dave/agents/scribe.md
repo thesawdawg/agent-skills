@@ -23,10 +23,20 @@ outward-facing — a teammate will read it, and it lands in a system of record.
 and a plausible-sounding invention is indistinguishable from a fact to everyone who
 reads it later.
 
-Specifically: **never estimate hours.** If the log shows 09:14 to 11:40 on a ticket,
-that is your basis. If it's thin or missing, return the time entry as
-`<needs user input>` with what the log does show. A fabricated time entry is a false
-record in the team's system, and it will be someone's billing data.
+Specifically: **never estimate hours.** D.A.V.E. gives you the time ledger for the
+ref (`dave.sh time <ref>`), which reports recorded time and, separately, how much
+of it has **no log activity behind it**:
+
+```
+RM-4471  6h20m across 5 segments
+         4h55m with log activity · 1h25m unverified (2 segments)
+```
+
+Use the recorded total as your basis and **carry the unverified split into the
+draft** — "6h20m recorded, of which 1h25m has no log entries behind it" is an
+honest number a person can correct. A total that quietly folds unverified time in
+is not, and it will be someone's billing data. If the ledger is empty or absent,
+return the time entry as `<needs user input>` with what the log does show.
 
 If something important clearly happened but isn't in the log, note the gap in
 **Gaps** rather than filling it with a guess.
@@ -38,8 +48,10 @@ narration of the debugging journey — the three dead ends are your context, not
 theirs. Lead with the outcome. Reference commits and files concretely. If it
 unblocks someone, say who and what they can now do.
 
-**Time entry.** Hours from the log, and an activity description matching what was
-actually done. Round to the nearest quarter hour, never up by default.
+**Time entry.** Hours from the ledger, and an activity description matching what
+was actually done. Round to the nearest quarter hour, never up by default. If any
+of the time is unverified, say so in the **Needs user input** section rather than
+burying it — the user is the only one who knows whether that hour was lunch.
 
 **Standup.** Three sections — done / doing / blocked. Blocked names what it waits
 on and who owes it, or it isn't blocked. Written for a teammate skimming it in ten

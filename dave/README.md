@@ -107,7 +107,8 @@ rather than inventing a picture.
 Every outward write — Redmine status, comment, time log — is drafted, shown in full,
 and sent only on an explicit yes for that specific write.
 
-**A SessionStart hook** injects your current focus and Now list into every session,
+**A SessionStart hook** injects the project you're in, your current focus, where
+you left it, anything promised and coming due, and the Now list into every session,
 so D.A.V.E. is present from the first token rather than waiting to be summoned.
 It stays silent when he isn't set up, and `hooks.session_start: false` in the
 config turns it off.
@@ -126,16 +127,32 @@ only thing that writes there.
 ~/.dave/
   config.json        identity, personality dials, Redmine authority, boards
   priorities.md      THE list — Now / Next / Blocked / Someday. Yours, not his.
-  state.json         current focus, last intake, last brief
+  state.json         current focus and its stack, last intake, drift events
   parking-lot.md     captured detours, with what they pulled against
+  notes.json         where you left off, per ref
+  commitments.json   what you promised, to whom, by when
+  sessions.jsonl     the time ledger — one record per closed focus
   log/YYYY-MM-DD.md  timestamped activity, stamped with the focus ref
+  projects/<slug>/   goal, cadence, linked refs, cached codebase dossier
   missions/<slug>.md multi-agent mission briefs and their assignment table
   intake/            raw archived boards, so intake is auditable
+  scan-cache.json    last known git state per project (regenerated, disposable)
 ```
 
-`dave.sh brief` is a composite read — identity, focus, priorities, today's log,
-and parked items in **one** call, so orienting at session start costs one tool
-call rather than five. Run `dave.sh help` for the full command list.
+`dave.sh brief` is a composite read — the project you're standing in, focus,
+priorities, today's log, promises coming due and parked items in **one** call, so
+orienting at session start costs one tool call rather than five. Run
+`dave.sh help` for the full command list.
+
+**Time is recorded, not estimated.** Every closed focus banks a segment, and
+`dave.sh time <ref>` reports the total *and* how much of it has no log activity
+behind it. Scribe quotes both, because a time entry that quietly rounds unverified
+minutes into the total becomes someone's billing data.
+
+**Projects are a facet, not a second list.** `dave.sh project add <path>` registers
+one; the session-start hook then leads with the project you're actually sitting in.
+Rank stays global — a per-project ranking would let three projects each hold a
+number-one item, which is the problem this exists to solve.
 
 ## Design notes
 

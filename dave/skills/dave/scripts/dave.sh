@@ -26,6 +26,8 @@ DAVE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DAVE_SCRIPT_DIR/lib/mission.sh"
 # shellcheck source=lib/project.sh
 . "$DAVE_SCRIPT_DIR/lib/project.sh"
+# shellcheck source=lib/track.sh
+. "$DAVE_SCRIPT_DIR/lib/track.sh"
 
 cmd_help() {
   cat <<'HELP'
@@ -51,12 +53,27 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
   project of <ref>          which project owns a ref
   project resolve [path]    which project a directory belongs to (silent if none)
   project touch [slug]      stamp last activity
+  scan [slug]               git state across projects  [--json] [--fresh] [--all]
+
+ tracking
+  next set <ref> <text>     record where you left off  (also: next show, next clear)
+  promise add <who> <what> <due>   record a commitment  [--ref R] [--project P]
+  promise list              commitments  [--open] [--due-within N] [--json]
+  promise keep|miss <id>    close one out
+  promise move <id> <due>   renegotiate a date, keeping the history
 
  focus
-  focus set <ref> [label]   set the current focus
+  focus set <ref> [label]   set the current focus (banks the previous one)
+  focus push <ref> [label]  keep the current focus and stack it under a detour
+  focus pop                 close the detour and return to what it interrupted
   focus clear               clear it
-  focus show                print it
+  focus show                print it, plus anything stacked under it
+  time [ref]                recorded time  [--since D] [--project P] [--json]
   drift                     minutes on focus + whether the ref is still on the list
+  drift record <kind> <out> log a resolved drift episode (kind: unlisted,
+                            third-repo, parked-resurfaced, no-focus; outcome:
+                            parked, promoted, continued)
+  drift events [--days N]   what drift has looked like lately
 
  capture
   park <text>               capture a detour without acting on it
@@ -95,6 +112,10 @@ main() {
     standup) cmd_standup "$@" ;;
     mission) cmd_mission "$@" ;;
     project) cmd_project "$@" ;;
+    scan) cmd_scan "$@" ;;
+    time) cmd_time "$@" ;;
+    next) cmd_next "$@" ;;
+    promise) cmd_promise "$@" ;;
     intake) cmd_intake "$@" ;;
     help|-h|--help) cmd_help ;;
     *) die "unknown command: $cmd (try: dave.sh help)" ;;

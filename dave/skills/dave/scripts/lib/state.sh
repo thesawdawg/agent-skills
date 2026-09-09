@@ -80,6 +80,10 @@ cmd_brief() {
            "goal: \(if (.goal // "") == "" then "(none set)" else .goal end)",
            "refs: \(if (.refs | length) == 0 then "(none linked)" else (.refs | join(", ")) end)"' \
       "$(_project_file "$slug")"
+    # Refreshes the scan cache as a side effect, which is what leaves the hook
+    # something to show without ever probing at session start itself.
+    cmd_scan >/dev/null 2>&1 || true
+    _scan_cached_line "$slug"
   fi
   echo
   echo "=== FOCUS ==="
@@ -92,8 +96,42 @@ cmd_brief() {
     local drift_out
     drift_out="$(cmd_drift)"
     echo "elapsed: $(printf '%s\n' "$drift_out" | head -1)"
+    local focus_ref next_text
+    focus_ref="$(jq -r '.focus.ref // empty' "$STATE")"
+    next_text="$(_next_for "$focus_ref")"
+    [ -n "$next_text" ] && echo "next: $next_text"
+    jq -r 'if ((.focus_stack // []) | length) > 0
+           then "stacked under it: \((.focus_stack | map(.ref) | reverse | join(", ")))"
+           else empty end' "$STATE"
   fi
   echo
+
+  # Both of the sections below are omitted entirely when empty. A brief that
+  # prints "(none)" five times is a brief nobody reads to the bottom.
+  local due
+  due="$(_promise_list --open --due-within "$(config_get '.review.promise_horizon_days' 3)" 2>/dev/null || true)"
+  if [ -n "$due" ] && [ "$due" != "(nothing matching)" ] && [ "$due" != "(no commitments recorded)" ]; then
+    echo "=== PROMISED, DUE SOON ==="
+    printf '%s\n' "$due"
+    echo
+  fi
+
+  # Everything except the focused ref, whose note is already on the focus line.
+  local notes focus_now
+  focus_now="$(jq -r '.focus.ref // empty' "$STATE")"
+  if [ -n "$slug" ]; then
+    notes="$(_next_show --project "$slug" 2>/dev/null || true)"
+  else
+    notes="$(_next_show 2>/dev/null || true)"
+  fi
+  # Exact prefix match rather than a regex: a ref is not guaranteed to be free
+  # of characters grep would read as syntax.
+  [ -n "$focus_now" ] && notes="$(printf '%s\n' "$notes" | awk -v r="${focus_now}: " 'index($0, r) != 1')"
+  if [ -n "$notes" ] && [ "$notes" != "(no next actions recorded)" ]; then
+    echo "=== WHERE YOU LEFT OFF ==="
+    printf '%s\n' "$notes" | head -5
+    echo
+  fi
   echo "=== PRIORITIES ==="
   cat "$PRIORITIES"
   echo

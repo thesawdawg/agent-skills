@@ -23,6 +23,8 @@ new_home() {
 
 dave() { "$DAVE" "$@"; }
 
+jsonl_count() { [ -f "$1" ] && grep -c . "$1" || echo 0; }
+
 ok() { PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
 no() { FAIL=$((FAIL+1)); FAILED_NAMES+=("$1"); printf '  FAIL %s\n     %s\n' "$1" "${2:-}"; }
 
@@ -316,6 +318,208 @@ test_project_candidates() {
   esac
 }
 
+# --------------------------------------------------------------- focus stack
+
+test_focus_stack() {
+  dave init >/dev/null
+  local out; out="$(dave focus push RM-1 "parent")"
+  assert_contains "push with nothing focused says so" "$out" "nothing was focused to stack"
+  out="$(dave focus push RM-2 "detour")"
+  assert_contains "push stacks the parent" "$out" "stacked over RM-1"
+  assert_eq "the detour is current" "RM-2" "$(jq -r .focus.ref "$DAVE_HOME/state.json")"
+  assert_eq "the parent is stacked" "1" "$(jq -r '.focus_stack | length' "$DAVE_HOME/state.json")"
+  assert_contains "show lists the stack" "$(dave focus show)" "RM-1 — parent"
+
+  out="$(dave focus pop)"
+  assert_contains "pop returns to the parent" "$out" "RM-1 — parent"
+  assert_eq "the stack is empty again" "0" "$(jq -r '.focus_stack | length' "$DAVE_HOME/state.json")"
+  # The parent's clock restarts: its earlier time is already banked, and the
+  # detour must not be billed to it.
+  local started; started="$(jq -r .focus.started "$DAVE_HOME/state.json")"
+  assert_eq "pop restarts the parent's clock" "$(date -d "$started" +%F)" "$(date +%F)"
+
+  out="$(dave focus pop)"
+  assert_contains "pop with an empty stack clears" "$out" "nothing stacked to return to"
+  assert_eq "focus is cleared" "null" "$(jq -r '.focus // "null"' "$DAVE_HOME/state.json")"
+
+  dave focus push RM-9 >/dev/null
+  dave focus clear >/dev/null
+  assert_eq "clear empties the stack too" "0" "$(jq -r '.focus_stack | length' "$DAVE_HOME/state.json")"
+}
+
+test_time_ledger() {
+  dave init >/dev/null
+  assert_contains "time with nothing recorded" "$(dave time)" "(nothing recorded)"
+
+  # Backdate a focus so a closed segment has real minutes in it.
+  dave focus set RM-4471 "retry" >/dev/null
+  jq --arg t "$(date -d '-90 min' -Iseconds)" '.focus.started = $t' "$DAVE_HOME/state.json" > "$DAVE_HOME/s" \
+    && mv "$DAVE_HOME/s" "$DAVE_HOME/state.json"
+  dave log "found the double-fire" >/dev/null
+  dave focus set RM-9999 "something else" >/dev/null
+
+  assert_eq "a segment was banked" "1" "$(jsonl_count "$DAVE_HOME/sessions.jsonl")"
+  local rec; rec="$(head -1 "$DAVE_HOME/sessions.jsonl")"
+  assert_eq "the segment names the ref" "RM-4471" "$(printf '%s' "$rec" | jq -r .ref)"
+  assert_eq "the segment has ~90 minutes" "90" "$(printf '%s' "$rec" | jq -r .minutes)"
+  assert_eq "the segment counted log activity" "1" "$(printf '%s' "$rec" | jq -r .log_lines)"
+
+  local out; out="$(dave time RM-4471)"
+  assert_contains "time reports the total" "$out" "1h30m across 1 segment"
+  assert_contains "time reports the open segment" "$(dave time)" "open now:"
+  assert_eq "time --json is machine readable" "RM-4471" "$(dave time --json | jq -r '.segments[0].ref')"
+  assert_eq "time filters by ref" "0" "$(dave time RM-0 --json | jq '.segments | length')"
+
+  # Time with no log activity behind it is real elapsed time with no evidence,
+  # and must be reported separately rather than folded into the total.
+  # The log is cleared first: backdating a segment would otherwise pull the
+  # earlier test's log line inside this window, which real segments never do.
+  rm -f "$DAVE_HOME/log/$(date +%F).md"
+  dave focus set RM-5 "unverified work" >/dev/null
+  jq --arg t "$(date -d '-40 min' -Iseconds)" '.focus.started = $t' "$DAVE_HOME/state.json" > "$DAVE_HOME/s" \
+    && mv "$DAVE_HOME/s" "$DAVE_HOME/state.json"
+  dave focus clear >/dev/null
+  assert_contains "unverified time is split out" "$(dave time RM-5)" "40m unverified"
+}
+
+test_time_open_cap() {
+  dave init >/dev/null
+  dave focus set RM-1 "held forever" >/dev/null
+  jq --arg t "$(date -d '-16 hour' -Iseconds)" '.focus.started = $t' "$DAVE_HOME/state.json" > "$DAVE_HOME/s" \
+    && mv "$DAVE_HOME/s" "$DAVE_HOME/state.json"
+  local out; out="$(dave time)"
+  assert_contains "an overnight focus is capped, not asserted" "$out" "4h0m"
+  assert_contains "and the cap is disclosed" "$out" "capped"
+  case "$out" in *16h*) no "the raw 16 hours never appears" "found 16h" ;; *) ok "the raw 16 hours never appears" ;; esac
+}
+
+test_drift_events() {
+  dave init >/dev/null
+  dave focus set RM-1 "work" >/dev/null
+  assert_contains "drift still reports by default" "$(dave drift)" "on focus"
+  dave drift record third-repo parked >/dev/null
+  dave drift record third-repo continued >/dev/null
+  dave drift record unlisted promoted >/dev/null
+  assert_eq "events are recorded" "3" "$(jq -r '.drift_events | length' "$DAVE_HOME/state.json")"
+  assert_eq "the focus ref is captured" "RM-1" "$(jq -r '.drift_events[0].ref' "$DAVE_HOME/state.json")"
+  local out; out="$(dave drift events)"
+  assert_contains "events summarise by kind" "$out" "third-repo: 2"
+  assert_contains "events name the outcomes" "$out" "1 parked"
+  assert_exit "an invalid kind is refused" 1 dave drift record nonsense parked
+  assert_exit "an invalid outcome is refused" 1 dave drift record unlisted maybe
+  assert_eq "events --json" "3" "$(dave drift events --json | jq length)"
+}
+
+# ------------------------------------------------------------------ tracking
+
+test_next() {
+  dave init >/dev/null
+  assert_contains "next with nothing recorded" "$(dave next show)" "(no next actions recorded)"
+  dave next set RM-4471 "instrument retry middleware ~line 88" >/dev/null
+  assert_contains "next show returns it" "$(dave next show)" "instrument retry middleware"
+  assert_contains "next show filters by ref" "$(dave next show RM-4471)" "line 88"
+  assert_contains "next show on an unknown ref" "$(dave next show RM-0)" "(no next actions recorded)"
+  dave next set RM-4471 "revised" >/dev/null
+  assert_eq "next set overwrites" "revised" "$(jq -r '."RM-4471".text' "$DAVE_HOME/notes.json")"
+  dave next clear RM-4471 >/dev/null
+  assert_contains "next clear removes it" "$(dave next show)" "(no next actions recorded)"
+}
+
+test_promise() {
+  dave init >/dev/null
+  assert_contains "promise list when empty" "$(dave promise list)" "(no commitments recorded)"
+  local out; out="$(dave promise add "Maya" "SSO demo build" "$(date -d '+2 day' +%F)" --ref RM-4471)"
+  assert_contains "promise add returns an id" "$out" "c1: promised Maya"
+  dave promise add "Sam" "the exporter" "$(date -d '+30 day' +%F)" >/dev/null
+  assert_eq "ids increment" "c2" "$(jq -r '.[1].id' "$DAVE_HOME/commitments.json")"
+  assert_exit "an unreadable date is refused" 1 dave promise add "X" "y" "not-a-date"
+
+  # A date a human would actually say.
+  dave promise add "Ana" "the review" "friday" >/dev/null
+  assert_eq "a spoken date is normalized" "10" \
+    "$(jq -r '.[2].due | length' "$DAVE_HOME/commitments.json")"
+
+  assert_contains "list shows all" "$(dave promise list)" "Maya — SSO demo build"
+  local soon; soon="$(dave promise list --open --due-within 3)"
+  assert_contains "due-within finds the near one" "$soon" "Maya"
+  case "$soon" in *Sam*) no "due-within excludes the far one" "Sam listed" ;; *) ok "due-within excludes the far one" ;; esac
+
+  dave promise move c1 "$(date -d '+9 day' +%F)" >/dev/null
+  assert_eq "move keeps the history" "1" "$(jq -r '.[0].moved | length' "$DAVE_HOME/commitments.json")"
+  assert_eq "move keeps it open" "open" "$(jq -r '.[0].status' "$DAVE_HOME/commitments.json")"
+  dave promise keep c1 >/dev/null
+  assert_eq "keep closes it" "kept" "$(jq -r '.[0].status' "$DAVE_HOME/commitments.json")"
+  dave promise miss c2 >/dev/null
+  assert_eq "miss closes it" "missed" "$(jq -r '.[1].status' "$DAVE_HOME/commitments.json")"
+  assert_exit "an unknown id is refused" 1 dave promise keep c99
+
+  # Overdue has to be visible without arithmetic on the reader's part.
+  dave promise add "Lee" "the thing" "$(date -d '-2 day' +%F)" >/dev/null
+  assert_contains "overdue is flagged" "$(dave promise list --open)" "OVERDUE"
+}
+
+test_scan() {
+  dave init >/dev/null
+  local root="$DAVE_HOME/work"; mkdir -p "$root/repo" "$root/plain"
+  git -C "$root/repo" init -q
+  git -C "$root/repo" config user.email t@t; git -C "$root/repo" config user.name t
+  echo a > "$root/repo/f.txt"; git -C "$root/repo" add -A; git -C "$root/repo" commit -qm "feat: one"
+  dave project add "$root/repo" >/dev/null
+  dave project add "$root/plain" >/dev/null
+
+  local out; out="$(dave scan)"
+  assert_contains "scan reports the branch" "$out" "repo"
+  assert_contains "scan reports a clean tree" "$out" "clean"
+  assert_contains "scan tolerates a non-repo" "$out" "(not a repo)"
+  assert_contains "scan dates the last commit" "$out" "committed today"
+  [ -f "$DAVE_HOME/scan-cache.json" ] && ok "scan writes a cache" || no "scan writes a cache" "missing"
+
+  echo b >> "$root/repo/f.txt"
+  case "$(dave scan)" in
+    *clean*) ok "a cached scan is served from cache" ;;
+    *) no "a cached scan is served from cache" "re-probed within the TTL" ;;
+  esac
+  assert_contains "--fresh bypasses the cache" "$(dave scan --fresh)" "1 dirty"
+  assert_eq "scan filters to one project" "1" "$(dave scan repo --json | jq 'keys | length')"
+
+  # A registered path that vanishes must not take the scan down with it.
+  rm -rf "$root/plain"
+  assert_contains "a missing path is reported" "$(dave scan --fresh)" "PATH GONE"
+
+  dave project status repo archived >/dev/null
+  assert_eq "archived projects are skipped" "0" "$(dave scan --fresh --json | jq 'keys | map(select(. == "repo")) | length')"
+  assert_eq "--all includes them" "1" "$(dave scan --fresh --all --json | jq 'keys | map(select(. == "repo")) | length')"
+}
+
+test_brief_phase_b() {
+  dave init >/dev/null
+  local root="$DAVE_HOME/work"; mkdir -p "$root/webcrawler"
+  dave project add "$root/webcrawler" >/dev/null
+  dave project link webcrawler RM-4471 >/dev/null
+  dave focus set RM-4471 "retry" >/dev/null
+  dave next set RM-4471 "instrument the middleware" >/dev/null
+  dave promise add "Maya" "SSO demo" "$(date -d '+1 day' +%F)" --ref RM-4471 >/dev/null
+
+  local out; out="$(cd "$root/webcrawler" && dave brief)"
+  assert_contains "brief shows where you left off" "$out" "next: instrument the middleware"
+  assert_contains "brief surfaces a promise coming due" "$out" "PROMISED, DUE SOON"
+  assert_contains "brief names who it was made to" "$out" "Maya"
+  # The focused ref's note is on the focus line already; printing it twice is noise.
+  assert_eq "the focused ref is not repeated below" "0" \
+    "$(printf '%s' "$out" | grep -c '^RM-4471: instrument' || true)"
+  dave next set RM-77 "a different ref" >/dev/null
+  dave project link webcrawler RM-77 >/dev/null
+  assert_contains "other refs still appear" "$(cd "$root/webcrawler" && dave brief)" "RM-77: a different ref"
+
+  # Both sections vanish when empty rather than printing "(none)".
+  dave next clear RM-4471 >/dev/null
+  dave next clear RM-77 >/dev/null
+  dave promise keep c1 >/dev/null
+  out="$(cd "$root/webcrawler" && dave brief)"
+  case "$out" in *"PROMISED, DUE SOON"*) no "the promise section vanishes when empty" "still shown" ;; *) ok "the promise section vanishes when empty" ;; esac
+  case "$out" in *"WHERE YOU LEFT OFF"*) no "the notes section vanishes when empty" "still shown" ;; *) ok "the notes section vanishes when empty" ;; esac
+}
+
 # ------------------------------------------------------------------- helpers
 
 test_helpers() {
@@ -377,7 +581,8 @@ test_git_probe() {
 
 test_help() {
   local out; out="$(dave help)"
-  for c in init migrate brief focus drift park log standup mission intake project; do
+  for c in init migrate brief focus drift park log standup mission intake project \
+           scan time next promise; do
     assert_contains "help lists $c" "$out" "  $c"
   done
   assert_exit "an unknown command fails" 1 dave frobnicate
@@ -389,7 +594,8 @@ command -v jq >/dev/null 2>&1 || { echo "jq is required to run these tests"; exi
 
 for t in init init_idempotent not_set_up_exits_3 migrate focus drift journal \
          intake mission project project_resolve project_candidates \
-         hook_schema_note brief \
+         hook_schema_note brief focus_stack time_ledger time_open_cap \
+         drift_events next promise scan brief_phase_b \
          helpers git_probe help; do
   run_test "$t"
 done

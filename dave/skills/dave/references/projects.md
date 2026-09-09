@@ -76,6 +76,34 @@ This is what makes the session-start hook say something specific: in a registere
 project it leads with that project's name, goal and refs; anywhere else it emits
 exactly what it emitted before the project layer existed.
 
+## The scan
+
+```bash
+dave.sh scan            # every non-archived project
+dave.sh scan <slug> --fresh
+```
+
+Branch, dirty and untracked counts, commits behind and unpushed ahead, and how old
+the last commit is. Optionally the open PR count, when `projects.use_gh` is on, the
+remote is GitHub and `gh` is installed — and silently skipped on any failure,
+because a scan must not break when the network does.
+
+**It never fetches.** Ahead/behind is measured against the last-known remote ref,
+and the output says so rather than implying freshness it does not have.
+
+Results are cached for `projects.scan_ttl_seconds` (default 300). The split matters:
+
+- **`brief` refreshes the cache** — it is explicitly invoked, so it can afford the
+  walk, and it leaves the result behind for whoever reads next.
+- **The session-start hook only reads it.** It shows git state when a scan already
+  knows it and says nothing when none does. A hook that probes every registered
+  repository at session start is a hook that gets disabled, and then nothing works.
+
+This is the one signal about a project that is always current. Boards arrive by
+hand and go stale; Redmine needs an MCP that may not be there; git is sitting in
+the directory. It is how the weekly review knows a project has gone quiet without
+anyone having told it.
+
 ## What belongs in a project, and what doesn't
 
 **Belongs:** the goal, the cadence, the refs, the cached codebase dossier, the
