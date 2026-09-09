@@ -520,6 +520,181 @@ test_brief_phase_b() {
   case "$out" in *"WHERE YOU LEFT OFF"*) no "the notes section vanishes when empty" "still shown" ;; *) ok "the notes section vanishes when empty" ;; esac
 }
 
+# ------------------------------------------------------------------ missions
+
+test_mission_ledger() {
+  dave init >/dev/null
+  dave mission new "SSO rollout" --ref RM-4471 >/dev/null
+  assert_eq "mission new registers metadata" "RM-4471" \
+    "$(jq -r '."sso-rollout".ref' "$DAVE_HOME/missions.json")"
+  assert_eq "a new mission is open" "open" \
+    "$(jq -r '."sso-rollout".status' "$DAVE_HOME/missions.json")"
+
+  local id; id="$(dave mission assign sso-rollout scout "find out why the retry double-fires")"
+  assert_eq "assign returns a readable id" "sso-rollout#1" "$id"
+  local id2; id2="$(dave mission assign sso-rollout ideator "three approaches" --model opus)"
+  assert_eq "ids increment per mission" "sso-rollout#2" "$id2"
+
+  assert_contains "status lists what is outstanding" "$(dave mission status)" "sso-rollout#1"
+  assert_contains "status names the agent" "$(dave mission status sso-rollout)" "scout"
+
+  dave mission record "$id" --verdict partial --summary "cache claim unverified" >/dev/null
+  local st; st="$(dave mission status sso-rollout)"
+  case "$st" in *"sso-rollout#1"*) no "a recorded charge leaves the outstanding list" "still listed" ;;
+                *) ok "a recorded charge leaves the outstanding list" ;; esac
+  assert_contains "the other charge is still open" "$st" "sso-rollout#2"
+
+  # The table is rendered from the ledger, not maintained by hand.
+  local show; show="$(dave mission show sso-rollout)"
+  assert_contains "show renders a table header" "$show" "| Id | Agent | Charge | Returned | Verdict |"
+  assert_contains "show renders the verdict" "$show" "partial — cache claim unverified"
+  assert_contains "show marks an open charge" "$show" "**open**"
+  assert_contains "show notes the model when given" "$show" "ideator (opus)"
+  assert_eq "the template table is not duplicated" "1" \
+    "$(printf '%s' "$show" | grep -c '^## Assignments')"
+
+  assert_exit "an orphan verdict is refused" 1 dave mission record "sso-rollout#99" --verdict trust
+  assert_exit "an invalid verdict is refused" 1 dave mission record "$id2" --verdict lovely
+  assert_exit "a verdict is required" 1 dave mission record "$id2"
+
+  # The active mission is the default target, so a long session stops repeating itself.
+  dave mission open sso-rollout >/dev/null
+  assert_eq "open sets the active mission" "sso-rollout" "$(jq -r .active_mission "$DAVE_HOME/state.json")"
+  local id3; id3="$(dave mission assign critic "attack the plan")"
+  assert_eq "assign defaults to the active mission" "sso-rollout#3" "$id3"
+
+  local out; out="$(dave mission close sso-rollout --outcome "shipped")"
+  assert_contains "close flags unrecorded charges" "$out" "closed without a recorded verdict"
+  assert_eq "close clears the active mission" "null" "$(jq -r '.active_mission // "null"' "$DAVE_HOME/state.json")"
+  assert_eq "close records the outcome" "shipped" "$(jq -r '."sso-rollout".outcome' "$DAVE_HOME/missions.json")"
+  assert_eq "list --open excludes it" "0" "$(dave mission list --open --json | jq length)"
+}
+
+test_mission_legacy() {
+  dave init >/dev/null
+  # A brief written before missions.json existed must not read as broken.
+  sed -e 's|{{SLUG}}|old-thing|g' -e "s|{{DATE}}|$(today)|g" \
+    "$TEST_DIR/../../templates/mission-brief-template.md" > "$DAVE_HOME/missions/old-thing.md"
+  assert_contains "list finds an unregistered brief" "$(dave mission list)" "old-thing"
+  local id; id="$(dave mission assign old-thing scout "have a look")"
+  assert_eq "assigning backfills its metadata" "sso" "$(jq -r 'if ."old-thing" then "sso" else "missing" end' "$DAVE_HOME/missions.json")"
+  assert_eq "and the id is well formed" "old-thing#1" "$id"
+}
+
+test_mission_pack() {
+  dave init >/dev/null
+  local root="$DAVE_HOME/work"; mkdir -p "$root/webcrawler"
+  dave project add "$root/webcrawler" >/dev/null
+  dave mission new "retry bug" --ref RM-4471 --project webcrawler >/dev/null
+  local path="$DAVE_HOME/missions/retry-bug.md"
+
+  # An unfilled brief must say so rather than emitting a confident empty charge.
+  local pack; pack="$(dave mission pack retry-bug --agent scout)"
+  assert_contains "pack flags an empty brief" "$pack" "Incomplete brief"
+  assert_contains "pack names the empty sections" "$pack" "objective"
+
+  cat > "$path" <<'BRIEF'
+# Mission: retry-bug
+
+## Priority ref
+
+RM-4471
+
+## Objective
+
+The retry middleware fires once per request.
+
+## Definition of done
+
+- [x] a failing test reproduces the double-fire
+
+## Constraints
+
+Do not touch the billing path.
+
+## Context the agent won't have
+
+The retry wrapper lives in src/mw/retry.py and was rewritten in June.
+
+## Assignments
+
+| Agent | Charge | Returned | Verdict |
+|---|---|---|---|
+
+## Open questions
+
+## Outcome
+BRIEF
+
+  pack="$(dave mission pack retry-bug --agent scout)"
+  case "$pack" in *"Incomplete brief"*) no "a filled brief packs cleanly" "still flagged" ;;
+                  *) ok "a filled brief packs cleanly" ;; esac
+  assert_contains "pack carries the objective" "$pack" "fires once per request"
+  assert_contains "pack carries the done conditions" "$pack" "failing test reproduces"
+  assert_contains "pack carries undiscoverable context" "$pack" "src/mw/retry.py"
+  assert_contains "pack names the ref it serves" "$pack" "Serves: RM-4471"
+  assert_contains "pack ends with the agent's return format" "$pack" "## Return format"
+  assert_contains "pack quotes the real return contract" "$pack" "## Answer"
+  case "$pack" in *"<!--"*) no "pack strips the template's prompts" "HTML comment leaked" ;;
+                  *) ok "pack strips the template's prompts" ;; esac
+
+  # A charge with no return contract is not a charge.
+  assert_exit "pack refuses an unknown agent" 1 dave mission pack retry-bug --agent nosuch
+  assert_exit "pack requires an agent" 1 dave mission pack retry-bug
+
+  # Prior charges travel with the brief so a rerun knows what went wrong.
+  local id; id="$(dave mission assign retry-bug scout "first look")"
+  dave mission record "$id" --verdict rerun --summary "answered an easier question" >/dev/null
+  pack="$(dave mission pack retry-bug --agent scout)"
+  assert_contains "pack lists prior charges" "$pack" "Already asked on this mission"
+  assert_contains "pack carries the prior verdict" "$pack" "rerun (answered an easier question)"
+
+  # And the project's dossier is offered rather than re-derived.
+  echo "# webcrawler map" | dave dossier set webcrawler >/dev/null
+  pack="$(dave mission pack retry-bug --agent scout)"
+  assert_contains "pack points at the cached dossier" "$pack" "dossier.md"
+
+  # An untouched brief: every section empty, and the template's own unticked
+  # checkbox must read as a skeleton rather than as a filled definition of done.
+  dave mission new "skeleton" >/dev/null
+  local bare; bare="$(dave mission pack skeleton --agent scout)"
+  assert_contains "an empty section says so" "$bare" "_(none stated)_"
+  assert_contains "a skeleton done-list still counts as empty" "$bare" "definition-of-done"
+}
+
+test_dossier() {
+  dave init >/dev/null
+  local root="$DAVE_HOME/work"; mkdir -p "$root/repo"
+  git -C "$root/repo" init -q
+  git -C "$root/repo" config user.email t@t; git -C "$root/repo" config user.name t
+  echo a > "$root/repo/f"; git -C "$root/repo" add -A; git -C "$root/repo" commit -qm one
+  dave project add "$root/repo" >/dev/null
+
+  assert_contains "no dossier yet" "$(dave dossier get repo)" "(no dossier for repo"
+  printf '# Map
+
+It is a crawler.
+' | dave dossier set repo >/dev/null
+  assert_contains "dossier get returns it" "$(dave dossier get repo)" "It is a crawler."
+  assert_contains "a fresh dossier is current" "$(dave dossier get repo)" "has not moved since"
+  assert_eq "the dossier is stamped with a commit" "40" \
+    "$(jq -r '.dossier.head | length' "$DAVE_HOME/projects/repo/project.json")"
+
+  echo b > "$root/repo/f2"; git -C "$root/repo" add -A; git -C "$root/repo" commit -qm two
+  assert_contains "one commit on is still current" "$(dave dossier get repo)" "1 commit(s) since"
+
+  # Past the threshold it must say so plainly rather than being quietly trusted.
+  jq '.projects.dossier_stale_commits = 1' "$DAVE_HOME/config.json" > "$DAVE_HOME/c" \
+    && mv "$DAVE_HOME/c" "$DAVE_HOME/config.json"
+  assert_contains "past the threshold it is stale" "$(dave dossier get repo)" "STALE"
+
+  # A rewritten history must not produce a confident wrong answer.
+  jq '.dossier.head = "0000000000000000000000000000000000000000"' \
+    "$DAVE_HOME/projects/repo/project.json" > "$DAVE_HOME/p" \
+    && mv "$DAVE_HOME/p" "$DAVE_HOME/projects/repo/project.json"
+  assert_contains "an unknown commit is admitted" "$(dave dossier get repo)" "no longer in this repository"
+}
+
 # ------------------------------------------------------------------- helpers
 
 test_helpers() {
@@ -582,7 +757,7 @@ test_git_probe() {
 test_help() {
   local out; out="$(dave help)"
   for c in init migrate brief focus drift park log standup mission intake project \
-           scan time next promise; do
+           scan time next promise dossier; do
     assert_contains "help lists $c" "$out" "  $c"
   done
   assert_exit "an unknown command fails" 1 dave frobnicate
@@ -596,6 +771,7 @@ for t in init init_idempotent not_set_up_exits_3 migrate focus drift journal \
          intake mission project project_resolve project_candidates \
          hook_schema_note brief focus_stack time_ledger time_open_cap \
          drift_events next promise scan brief_phase_b \
+         mission_ledger mission_legacy mission_pack dossier \
          helpers git_probe help; do
   run_test "$t"
 done

@@ -60,6 +60,7 @@ what does and doesn't carry over. The short version:
 | `/dave:brief` | Orients you — focus, what's in Now, what's stale, what's parked |
 | `/dave:focus <ref>` | Locks onto one item so drift can be measured against it |
 | `/dave:project [slug]` | Registers or reports on a project — the container an item belongs to |
+| `/dave:mission [slug]` | Opens, inspects or closes a mission, and shows what's still owed |
 | `/dave:intake [source]` | Ingests a board or Redmine, reconciles into one ranked list |
 | `/dave:check` | An honest drift check, right now |
 | `/dave:park <thing>` | Captures a distraction without acting on it |
@@ -134,7 +135,9 @@ only thing that writes there.
   sessions.jsonl     the time ledger — one record per closed focus
   log/YYYY-MM-DD.md  timestamped activity, stamped with the focus ref
   projects/<slug>/   goal, cadence, linked refs, cached codebase dossier
-  missions/<slug>.md multi-agent mission briefs and their assignment table
+  missions/<slug>.md multi-agent mission briefs; the assignment table is rendered
+  missions.json      per-mission project, ref, status
+  assignments.jsonl  every charge and every verdict, append-only
   intake/            raw archived boards, so intake is auditable
   scan-cache.json    last known git state per project (regenerated, disposable)
 ```
@@ -148,6 +151,12 @@ orienting at session start costs one tool call rather than five. Run
 `dave.sh time <ref>` reports the total *and* how much of it has no log activity
 behind it. Scribe quotes both, because a time entry that quietly rounds unverified
 minutes into the total becomes someone's billing data.
+
+**A delegation is a record, not a paragraph.** `mission assign` returns an id;
+`mission record` grades it `trust`/`partial`/`rerun`/`discard`. The mission's
+Assignments table is rendered from those events, so it cannot drift out of sync
+with what actually happened, and `mission status` says what has been asked for and
+never came back.
 
 **Projects are a facet, not a second list.** `dave.sh project add <path>` registers
 one; the session-start hook then leads with the project you're actually sitting in.

@@ -145,8 +145,47 @@ Every charge carries five things, from the mission brief:
 Point 4 is where delegation succeeds or fails. Spend real effort there.
 
 For anything spanning more than one agent or one sitting, open a mission file
-(`dave.sh mission new <name>`) and brief from it. Single-shot charges can be
-briefed inline.
+(`dave.sh mission new <name> --ref <ref>`) and brief from it. Single-shot charges
+can be briefed inline.
+
+### Assemble the charge; do not recall it
+
+```bash
+dave.sh mission open retry-bug                    # once per sitting
+dave.sh mission pack retry-bug --agent scout      # the five parts, from the brief
+```
+
+`mission pack` reads the five sections out of the mission file, appends the
+project's cached dossier when there is one, lists what has already been asked on
+this mission and how those charges were graded, and ends with the agent's own
+declared return format. If the agent has no `## Return format` section it refuses
+to emit anything — a charge with no return contract is not a charge.
+
+If the brief's required sections are still empty it says so at the bottom rather
+than emitting a confident empty charge. Fill them in, or supply them inline.
+
+**The pack is a floor, not a ceiling.** It cannot know what the user said ten
+minutes ago. Read it, add what only you know, and send that.
+
+### Reuse before you respawn
+
+A follow-up question goes back to the agent that already has the context, via
+`SendMessage`, rather than into a second cold spawn. The whole argument for
+delegation is context economy, and it applies to the second call as much as the
+first — a fresh agent re-derives everything the last one learned and charges you
+for it twice.
+
+Before charging Cartographer, check `dave.sh dossier get <project>`. A current map
+answers the charge for free; a stale one still narrows it. The dossier reports how
+many commits the repository has moved since it was made, so "is this still true"
+is a fact rather than a feeling.
+
+### D.A.V.E. never calls the `Workflow` tool
+
+Workflows fan out many agents without stopping, and every handoff in this contract
+is gated on the user seeing what came back. Those two designs cannot both be true
+at once. If a piece of work genuinely wants that shape, say so and let the user
+invoke it themselves.
 
 ## Sequencing
 
@@ -192,6 +231,33 @@ State the verdict plainly when relaying: what to trust, what to check. Never
 launder a subagent's confidence into your own — if Scout says a module is unused
 and nothing verified that, it is a claim, and it gets relayed as one.
 
-Record every charge in the mission's **Assignments** table, verdict included. That
-table is the audit trail for how a conclusion was reached, and it is what makes a
-mission resumable a week later.
+### The four verdicts
+
+Grading without a fixed vocabulary decays back into prose, and prose cannot be
+counted.
+
+| Verdict | Means | What you do |
+|---|---|---|
+| `trust` | Met the definition of done, item by item | Relay as-is |
+| `partial` | Usable, with named gaps | Relay, with the gaps stated as gaps |
+| `rerun` | Failed grading — the agent was out of its depth | Re-run heavier or re-briefed |
+| `discard` | Answered a different, easier question | Do not relay. Re-brief |
+
+### Record every charge and every verdict
+
+```bash
+id=$(dave.sh mission assign retry-bug scout "<the charge>" --model sonnet)
+dave.sh mission record "$id" --verdict partial --summary "cache claim unverified"
+```
+
+The mission's **Assignments** table is *rendered* from these events — you no longer
+maintain it by hand, and it can no longer drift out of sync with what actually
+happened. That table is the audit trail for how a conclusion was reached, and it is
+what makes a mission resumable a week later.
+
+It also makes the failure modes countable. "Scout has been re-run twice on this
+mission" is a briefing problem you can see; three separate paragraphs of hedged
+prose across two sessions is not.
+
+`dave.sh mission status` lists every charge still outstanding across all missions —
+what has been asked for and not yet come back.

@@ -130,6 +130,32 @@ What made that possible was one line at the end of the previous session
 something D.A.V.E. can reconstruct afterwards, which is why he offers to capture
 them at the moment they exist and never blocks on the answer.
 
+## Example: picking a mission back up a week later
+
+> **User:** what was I doing on the retry bug, and what did the Scout actually say?
+
+`dave.sh mission show retry-bug` answers both without re-reading anything:
+
+```
+## Assignments
+
+| Id | Agent | Charge | Returned | Verdict |
+|---|---|---|---|---|
+| retry-bug#1 | scout | why does the retry middleware double-fire | 2026-09-02 | partial — found it; the cache claim is unverified |
+| retry-bug#2 | critic (opus) | attack the fix before it lands | — | **open** |
+```
+
+Two things this makes possible that prose in a transcript does not. The verdict is
+still attached to the charge, so "the cache claim is unverified" has not quietly
+become a fact in the intervening week. And `retry-bug#2` is visibly still owed —
+a charge sent out and never graded is the single most forgettable thing in this
+whole system, which is why `dave.sh mission status` exists to list them.
+
+Charging the Critic again starts from `mission pack retry-bug --agent critic`,
+which carries the objective, the done conditions, the undiscoverable context, the
+project's cached codebase map, *and* what the Scout already found and how it
+graded — so the second agent does not re-derive the first agent's work.
+
 ## Combining with other skills
 
 - **`codex-delegate`** — for implementation heavier than `constructor` should carry. D.A.V.E. writes the mission brief, Codex does the work, D.A.V.E. logs the outcome against the ref.

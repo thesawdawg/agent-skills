@@ -387,3 +387,77 @@ _scan_cached_line() {
       + (if .ahead > 0 then ", \(.ahead) unpushed" else "" end)' \
     "$SCAN_CACHE" 2>/dev/null || true
 }
+
+# ------------------------------------------------------------------ dossier
+
+# A cached codebase map, per project. The delegation contract says Cartographer
+# "runs once per unfamiliar repo, not per ticket" and that its brief is worth
+# keeping — with no store to keep it in. This is the store.
+#
+# Per project rather than per mission, because a map describes a repository and
+# outlives any single mission against it.
+
+_dossier_path() { printf '%s/%s/dossier.md\n' "$PROJECTS" "$1"; }
+
+_dossier_set() {
+  local slug="${1:-}"
+  if [ -n "$slug" ]; then slug="$(_project_norm "$slug")"; else slug="$(_project_resolve)"; fi
+  [ -n "$slug" ] || die "no project given, and this directory is not in a registered project"
+  _project_require "$slug"
+  local path head
+  path="$(_dossier_path "$slug")"
+  cat > "$path"
+  # Stamped with the commit it describes, so staleness is measurable rather than
+  # a guess about how long ago someone ran Cartographer.
+  head="$(git -C "$(json_get "$(_project_file "$slug")" '.path')" rev-parse HEAD 2>/dev/null || echo "")"
+  json_edit "$(_project_file "$slug")" --arg h "$head" --arg ts "$(now_iso)" \
+    '.dossier = {head:$h, at:$ts}'
+  echo "$path"
+}
+
+# A human phrase describing how far the repo has moved since the map was made,
+# or nothing at all when there is no dossier to judge.
+_dossier_staleness() {
+  local slug="$1" pf head path n threshold
+  pf="$(_project_file "$slug")"
+  [ -f "$pf" ] || return 0
+  [ -f "$(_dossier_path "$slug")" ] || return 0
+  head="$(json_get "$pf" '.dossier.head')"
+  path="$(json_get "$pf" '.path')"
+  if [ -z "$head" ]; then echo "age unknown — it was not stamped with a commit"; return 0; fi
+  n="$(git -C "$path" rev-list --count "$head..HEAD" 2>/dev/null || echo "")"
+  if [ -z "$n" ]; then echo "age unknown — that commit is no longer in this repository"; return 0; fi
+  threshold="$(config_get '.projects.dossier_stale_commits' 50)"
+  if [ "$n" -ge "$threshold" ]; then
+    echo "STALE — $n commits since it was made, threshold $threshold"
+  elif [ "$n" -eq 0 ]; then
+    echo "current — the repository has not moved since"
+  else
+    echo "current — $n commit(s) since it was made"
+  fi
+}
+
+_dossier_get() {
+  local slug="${1:-}"
+  if [ -n "$slug" ]; then slug="$(_project_norm "$slug")"; else slug="$(_project_resolve)"; fi
+  [ -n "$slug" ] || die "no project given, and this directory is not in a registered project"
+  _project_require "$slug"
+  local path; path="$(_dossier_path "$slug")"
+  [ -f "$path" ] || { echo "(no dossier for $slug — have Cartographer map it, then: dossier set $slug < map.md)"; return 0; }
+  cat "$path"
+  echo
+  echo "---"
+  echo "dossier: $(_dossier_staleness "$slug")"
+}
+
+cmd_dossier() {
+  require_init
+  need_jq
+  local sub="${1:-get}"
+  shift || true
+  case "$sub" in
+    set) _dossier_set "$@" ;;
+    get) _dossier_get "$@" ;;
+    *) die "unknown dossier subcommand: $sub (set|get)" ;;
+  esac
+}
