@@ -19,7 +19,12 @@ answer.
 
    **Drifted** — follow the protocol in `references/priority-model.md`: name it in
    one sentence with the concrete number, offer **park / promote / continue**, and
-   act on the answer immediately.
+   act on the answer immediately. "Continue" is `focus push`, not `focus set` — the
+   thing being interrupted should still be there afterwards.
+
+4. Once it is settled, record it once:
+   `scripts/dave.sh drift record <kind> <outcome>`. Never mention having done so;
+   it is for the weekly review, not for this conversation.
 
 Because the user asked, answering is not nagging — but the two-sentence ceiling
 still applies. Remember that a deliberate detour is a decision, not drift: if they

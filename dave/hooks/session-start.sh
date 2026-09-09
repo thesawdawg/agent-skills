@@ -30,8 +30,6 @@ enabled="$(jq -r 'if .hooks.session_start == null then true else .hooks.session_
   "$CONFIG" 2>/dev/null || echo true)"
 [ "$enabled" = "false" ] && exit 0
 
-emit() { printf '%s\n' "$1"; }
-
 # Which project this session is sitting in, if any. Exit 4 means the state tree
 # predates this version — say so once, quietly, rather than degrading in silence
 # for weeks.
@@ -48,6 +46,29 @@ if [ -x "$DAVE_SH" ]; then
       (if (.goal // "") == "" then "" else "\nGoal: \(.goal)" end) +
       (if (.refs | length) == 0 then "" else "\nIts refs: \(.refs | join(", "))" end)
     ' "$DAVE_HOME/projects/$slug/project.json" 2>/dev/null || true)"
+
+    # Git state only if a scan already knows it. The hook reads what is known and
+    # stays quiet when nothing is; it never probes a repository itself.
+    cache="$DAVE_HOME/scan-cache.json"
+    if [ -f "$cache" ]; then
+      ttl="$(jq -r '.projects.scan_ttl_seconds // 300' "$CONFIG" 2>/dev/null || echo 300)"
+      gen="$(jq -r '.generated // empty' "$cache" 2>/dev/null || true)"
+      if [ -n "$gen" ]; then
+        age=$(( $(date +%s) - $(date -d "$gen" +%s 2>/dev/null || echo 0) ))
+        if [ "$age" -lt "$ttl" ]; then
+          git_line="$(jq -r --arg s "$slug" '
+            .entries[$s] // empty | select(.repo == true)
+            | "Git: \(.branch)"
+              + (if .dirty > 0 or .untracked > 0 then ", \(.dirty) dirty/\(.untracked) untracked" else ", clean" end)
+              + (if .days_since_commit == null then ""
+                 elif .days_since_commit == 0 then ", last commit today"
+                 elif .days_since_commit == 1 then ", last commit yesterday"
+                 else ", last commit \(.days_since_commit)d ago" end)' \
+            "$cache" 2>/dev/null || true)"
+          [ -n "${git_line:-}" ] && project_block="${project_block}"$'\n'"${git_line}"
+        fi
+      fi
+    fi
   fi
 fi
 
@@ -69,6 +90,27 @@ if [ -f "$PRIORITIES" ]; then
   [ -n "$now_section" ] || now_section="(nothing in Now)"
 fi
 
+# Where the focused ref was left, and anything promised to a person that is
+# about to come due. Both are silent when there is nothing to say.
+next_line=""
+if [ -f "$DAVE_HOME/notes.json" ] && [ -f "$STATE" ]; then
+  fref="$(jq -r '.focus.ref // empty' "$STATE" 2>/dev/null || true)"
+  if [ -n "${fref:-}" ]; then
+    nt="$(jq -r --arg r "$fref" '.[$r].text // empty' "$DAVE_HOME/notes.json" 2>/dev/null || true)"
+    [ -n "${nt:-}" ] && next_line="Left off at: ${nt}"
+  fi
+fi
+
+promise_line=""
+if [ -f "$DAVE_HOME/commitments.json" ]; then
+  horizon="$(jq -r '.review.promise_horizon_days // 3' "$CONFIG" 2>/dev/null || echo 3)"
+  promise_line="$(jq -r --arg today "$(date +%F)" --arg soon "$(date -d "+${horizon} day" +%F 2>/dev/null || date +%F)" '
+    [ .[] | select(.status == "open" and .due <= $soon) ] as $due
+    | if ($due | length) == 0 then empty
+      else "Promised: " + ([$due[] | "\(.who) — \(.what) (\(if .due < $today then "OVERDUE" else .due end))"] | join("; "))
+      end' "$DAVE_HOME/commitments.json" 2>/dev/null || true)"
+fi
+
 parked=0
 if [ -f "$DAVE_HOME/parking-lot.md" ]; then
   parked="$(grep -c '^- \[ \]' "$DAVE_HOME/parking-lot.md" 2>/dev/null || true)"
@@ -85,11 +127,13 @@ fi
 extra=""
 [ -n "$project_block" ] && extra="${project_block}"$'\n\n'
 [ -n "$schema_note" ]   && extra="${extra}${schema_note}"$'\n\n'
+[ -n "$promise_line" ]  && extra="${extra}${promise_line}"$'\n\n'
 
 context="$(cat <<CTX
 D.A.V.E. (dave plugin) is active. Priority state from ${DAVE_HOME}:
 
-${extra}Current focus: ${focus_line}
+${extra}Current focus: ${focus_line}${next_line:+
+${next_line}}
 
 Now (the operative definition of on-track):
 ${now_section}

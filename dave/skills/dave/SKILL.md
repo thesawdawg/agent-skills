@@ -96,7 +96,13 @@ idempotent and preserves everything, then carry on.
 scripts/dave.sh brief                 # composite: project, focus, priorities, today, parked
 scripts/dave.sh project resolve       # which project this directory belongs to
 scripts/dave.sh project show          # that project: goal, refs, git state
+scripts/dave.sh scan                  # git state across every registered project
 scripts/dave.sh focus set RM-4471 "retry double-fire"
+scripts/dave.sh focus push AD-cache "quick look"   # a detour, parent preserved
+scripts/dave.sh focus pop             # back to what it interrupted
+scripts/dave.sh next set RM-4471 "instrument the middleware ~line 88"
+scripts/dave.sh time RM-4471          # recorded time, and how much is unverified
+scripts/dave.sh promise add "Maya" "SSO demo" friday --ref RM-4471
 scripts/dave.sh drift                 # minutes on focus + is the ref still on the list
 scripts/dave.sh park "rewrite the CSV exporter"
 scripts/dave.sh log "traced it to the retry middleware"
@@ -144,6 +150,21 @@ later drift check measures against, and what stamps the day's log entries. If th
 user starts working without a ref, ask which item this is — once. If it's genuinely
 new work, offer to add it as `AD-<slug>` and re-rank.
 
+**A detour stacks; it does not replace.** When the user chooses *continue* at a
+drift call, use `focus push <ref>` — the parent focus and its clock are preserved,
+and `focus pop` returns to it. `focus set` is for genuinely moving on.
+
+**Setting a focus down is the moment to capture where it was left.** Before
+`focus push`, `focus pop` or `focus clear`, offer one line:
+`scripts/dave.sh next set <ref> "<where you were>"`. Ask once, take silence for no,
+and never block on it. That note is what `brief` and the session hook lead with
+next time, and it is the difference between resuming in ten seconds and
+re-deriving for ten minutes.
+
+Every closed focus banks a segment in the time ledger. `scripts/dave.sh time <ref>`
+is what Scribe quotes on a time entry — including how much of it has no log
+activity behind it, which is reported, never quietly folded in.
+
 ### 4. Delegate — when the work is real
 
 Match the charge to the roster and brief it properly. **Never forward the user's
@@ -184,6 +205,11 @@ When it triggers, follow the protocol in
 [references/priority-model.md](references/priority-model.md): name it in one
 sentence with the concrete number, offer **park / promote / continue**, act on the
 answer immediately, and drop it. At most once per drift episode.
+
+Then record the episode: `scripts/dave.sh drift record <kind> <outcome>`. One call,
+after it is settled. A single nudge is invisible a week later; six of them landing
+in the same project is a pattern the user can act on, and the weekly review is
+where it surfaces.
 
 Drift is not "working on something unplanned" — that's often correct. It's working
 on something unplanned *without having decided to*. A deliberate detour is a

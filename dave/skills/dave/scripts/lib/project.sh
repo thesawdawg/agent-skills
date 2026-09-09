@@ -262,3 +262,128 @@ _project_touch() {
   json_edit "$(_project_file "$slug")" --arg ts "$(now_iso)" '.last_touched = $ts'
   echo "$slug: touched"
 }
+
+# ----------------------------------------------------------------- git scan
+
+# The one signal that is always current. Boards are stale by design and Redmine
+# needs an MCP; git is sitting right there, and it is how the weekly sweep knows
+# a project has gone quiet without being told.
+#
+# Results are cached: the session-start hook must never pay for a walk across
+# every registered repository, so it reads what is already known and stays quiet
+# when nothing is.
+
+_scan_days_since() {
+  local iso="$1" at now
+  [ -n "$iso" ] || { echo ""; return 0; }
+  at="$(date -d "$iso" +%s 2>/dev/null)" || { echo ""; return 0; }
+  now="$(date +%s)"
+  echo $(( (now - at) / 86400 ))
+}
+
+# Open PR count, when the user has asked for it and the remote is actually
+# GitHub. Every failure here is silent: a scan must not break because the network
+# did, or because gh is logged out.
+_scan_gh_prs() {
+  local path="$1"
+  [ "$(config_bool '.projects.use_gh' false)" = "true" ] || return 0
+  command -v gh >/dev/null 2>&1 || return 0
+  git -C "$path" remote get-url origin 2>/dev/null | grep -qi 'github\.com' || return 0
+  local runner=""
+  command -v timeout >/dev/null 2>&1 && runner="timeout 8"
+  ( cd "$path" 2>/dev/null && $runner gh pr list --limit 30 --json number 2>/dev/null ) \
+    | jq 'length' 2>/dev/null || true
+}
+
+_scan_probe_all() {
+  local include_archived="$1"
+  local all; all="$(_projects_all)"
+  local entries="{}" slug path status probe days prs
+  while IFS=$'\t' read -r slug path status; do
+    [ -n "$slug" ] || continue
+    [ "$include_archived" -eq 0 ] && [ "$status" = "archived" ] && continue
+    probe="$(git_probe "$path")"
+    days="$(_scan_days_since "$(printf '%s' "$probe" | jq -r '.last_commit // ""')")"
+    prs="$(_scan_gh_prs "$path")"
+    entries="$(jq -c --arg slug "$slug" --arg status "$status" \
+      --argjson probe "$probe" \
+      --argjson days "${days:-null}" --argjson prs "${prs:-null}" \
+      '.[$slug] = ($probe + {slug:$slug, status:$status, days_since_commit:$days, open_prs:$prs})' \
+      <<< "$entries")"
+  done < <(printf '%s' "$all" | jq -r '.[] | "\(.slug)\t\(.path)\t\(.status)"')
+  printf '%s\n' "$entries"
+}
+
+cmd_scan() {
+  require_init
+  need_jq
+  local only="" as_json=0 fresh=0 include_archived=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --json)  as_json=1; shift ;;
+      --fresh) fresh=1; shift ;;
+      --all)   include_archived=1; shift ;;
+      -*) die "unknown flag: $1" ;;
+      *) only="$(_project_norm "$1")"; shift ;;
+    esac
+  done
+
+  local ttl gen age entries=""
+  ttl="$(config_get '.projects.scan_ttl_seconds' 300)"
+  if [ "$fresh" -eq 0 ] && [ -f "$SCAN_CACHE" ]; then
+    gen="$(json_get "$SCAN_CACHE" '.generated')"
+    if [ -n "$gen" ]; then
+      age=$(( $(date +%s) - $(date -d "$gen" +%s 2>/dev/null || echo 0) ))
+      [ "$age" -lt "$ttl" ] && entries="$(jq -c '.entries // {}' "$SCAN_CACHE")"
+    fi
+  fi
+  if [ -z "$entries" ]; then
+    entries="$(_scan_probe_all "$include_archived")"
+    jq -n --arg ts "$(now_iso)" --argjson e "$entries" '{generated:$ts, entries:$e}' > "$SCAN_CACHE"
+  fi
+
+  [ -n "$only" ] && entries="$(printf '%s' "$entries" | jq -c --arg s "$only" \
+    'with_entries(select(.key == $s))')"
+
+  if [ "$as_json" -eq 1 ]; then printf '%s\n' "$entries"; return 0; fi
+  printf '%s' "$entries" | jq -r '
+    to_entries | sort_by(.key) |
+    if length == 0 then "(nothing to scan — try: project add <path>)" else
+      map(.value |
+        if .exists == false then "\(.slug)\tPATH GONE\t\(.path)"
+        elif .repo == false then "\(.slug)\t(not a repo)\t\(.path)"
+        else "\(.slug)\t\(.branch)\t" +
+             (if .dirty > 0 or .untracked > 0 then "\(.dirty) dirty, \(.untracked) untracked" else "clean" end)
+             + "\t" +
+             (if .days_since_commit == null then "no commits"
+              elif .days_since_commit == 0 then "committed today"
+              elif .days_since_commit == 1 then "committed yesterday"
+              else "\(.days_since_commit)d since commit" end)
+             + (if .ahead > 0 then "\t\(.ahead) unpushed" else "\t" end)
+             + (if .open_prs != null and .open_prs > 0 then "\t\(.open_prs) open PRs" else "" end)
+        end
+      ) | join("\n")
+    end' | { column -t -s "$(printf '\t')" 2>/dev/null || cat; }
+}
+
+# What the hook shows: known-fresh git state, or nothing at all. Never probes.
+_scan_cached_line() {
+  local slug="$1" ttl gen age
+  [ -f "$SCAN_CACHE" ] || return 0
+  ttl="$(config_get '.projects.scan_ttl_seconds' 300)"
+  gen="$(json_get "$SCAN_CACHE" '.generated')"
+  [ -n "$gen" ] || return 0
+  age=$(( $(date +%s) - $(date -d "$gen" +%s 2>/dev/null || echo 0) ))
+  [ "$age" -lt "$ttl" ] || return 0
+  jq -r --arg s "$slug" '
+    .entries[$s] // empty
+    | select(.repo == true)
+    | "Git: \(.branch)"
+      + (if .dirty > 0 or .untracked > 0 then ", \(.dirty) dirty/\(.untracked) untracked" else ", clean" end)
+      + (if .days_since_commit == null then ""
+         elif .days_since_commit == 0 then ", last commit today"
+         elif .days_since_commit == 1 then ", last commit yesterday"
+         else ", last commit \(.days_since_commit)d ago" end)
+      + (if .ahead > 0 then ", \(.ahead) unpushed" else "" end)' \
+    "$SCAN_CACHE" 2>/dev/null || true
+}

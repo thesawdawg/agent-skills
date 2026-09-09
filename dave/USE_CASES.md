@@ -102,6 +102,34 @@ parked on Tuesday.
 Suggest RM-4471 to done, then a fresh board before we re-rank. Shall I set focus?
 ```
 
+## Example: coming back to a project after a week
+
+> **User:** *(opens a session in `~/Projects/webcrawler`)* where was I?
+
+The hook has already put the answer in context, so this costs no tool calls at all:
+
+```
+Project: webcrawler — active, daily cadence
+Goal: crawl politely without getting the IP banned
+Its refs: RM-4471
+Git: retry-fix, 3 dirty/1 untracked, last commit 6d ago
+
+Promised: Maya — SSO demo build (OVERDUE)
+
+Current focus: RM-4471 — retry double-fire (since last Tuesday)
+Left off at: instrument the retry middleware ~line 88
+```
+
+A good run leads with the overdue promise, not the branch — a commitment to a
+person outranks everything else in the ranking model, and it is the one thing here
+the user cannot see for themselves. Then the concrete resumption point, then the
+uncommitted work sitting on a six-day-old branch.
+
+What made that possible was one line at the end of the previous session
+(`dave.sh next set RM-4471 "..."`) and one when the promise was made. Neither is
+something D.A.V.E. can reconstruct afterwards, which is why he offers to capture
+them at the moment they exist and never blocks on the answer.
+
 ## Combining with other skills
 
 - **`codex-delegate`** — for implementation heavier than `constructor` should carry. D.A.V.E. writes the mission brief, Codex does the work, D.A.V.E. logs the outcome against the ref.

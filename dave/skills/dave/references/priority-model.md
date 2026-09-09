@@ -41,7 +41,12 @@ clear on its own.
 Rank by `priorities.ranking_factors`, in config order. The default order:
 
 1. **A commitment made to someone.** A promise outranks a preference. This sits
-   first deliberately — it is the factor users discount and then regret.
+   first deliberately — it is the factor users discount and then regret. Record
+   them: `dave.sh promise add "<who>" "<what>" <due> [--ref R]`. Until a commitment
+   is a record it cannot be ranked, chased, or shown coming due — it is a thing the
+   user has to remember, which is the problem D.A.V.E. exists to remove. `brief`
+   surfaces anything inside `review.promise_horizon_days`, and a moved date keeps
+   its history rather than quietly overwriting the original.
 2. **Deadline.** Hard external dates before soft internal ones.
 3. **Blocking others.** Work that unblocks another person beats solo work of equal
    size, because their idle time is a real cost.
@@ -91,6 +96,19 @@ Signals, from `dave.sh drift` plus what's visible in the session:
    deliberate detour, logged and left alone).
 3. Take the answer at face value and act on it immediately.
 
-If the answer is continue, log it with `dave.sh log` and do not raise it again for
-that thread. Repeating a settled objection is the single fastest way for this
-plugin to become something the user turns off.
+If the answer is continue, `dave.sh focus push` onto the detour rather than
+replacing the focus — the parent and its clock survive, and `focus pop` returns to
+it. Then do not raise it again for that thread. Repeating a settled objection is
+the single fastest way for this plugin to become something the user turns off.
+
+**Record the episode once it is settled:**
+
+```bash
+dave.sh drift record third-repo continued          # kind, then outcome
+```
+
+Kinds: `unlisted`, `third-repo`, `parked-resurfaced`, `no-focus`. Outcomes:
+`parked`, `promoted`, `continued`. This is not for nagging — it is never read back
+in the same session. It exists so the weekly review can say *four of this week's
+six drift calls went into the same project*, which is a fact about the work rather
+than a fact about the user's discipline.
