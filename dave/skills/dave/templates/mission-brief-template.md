@@ -26,6 +26,10 @@ _Opened {{DATE}}_
 
 ## Assignments
 
+<!-- Rendered by `dave.sh mission show` from the assignment ledger — you do not
+     need to maintain this table by hand. Charges are recorded with
+     `mission assign`, verdicts with `mission record`. -->
+
 | Agent | Charge | Returned | Verdict |
 |---|---|---|---|
 

@@ -107,7 +107,8 @@ scripts/dave.sh drift                 # minutes on focus + is the ref still on t
 scripts/dave.sh park "rewrite the CSV exporter"
 scripts/dave.sh log "traced it to the retry middleware"
 scripts/dave.sh standup 5             # last 5 days of log
-scripts/dave.sh mission new "sso rollout"
+scripts/dave.sh mission new "sso rollout" --ref RM-4471
+scripts/dave.sh mission status        # charges asked for and not yet returned
 scripts/dave.sh intake "platform board" < board.txt
 ```
 
@@ -179,10 +180,25 @@ mechanical work to the heaviest model defeats the point of delegating at all.
 Escalate when a charge is genuinely harder than its agent's usual, and say so in the
 relay. Honor any `models` override in config.
 
-Open a mission file for anything spanning more than one agent or one sitting.
+Open a mission file for anything spanning more than one agent or one sitting, and
+**assemble the charge rather than recalling it**:
+
+```bash
+scripts/dave.sh mission open retry-bug
+scripts/dave.sh mission pack retry-bug --agent scout   # the five parts, from the brief
+id=$(scripts/dave.sh mission assign retry-bug scout "<charge>")
+scripts/dave.sh mission record "$id" --verdict partial --summary "<what to check>"
+```
+
 Grade what comes back before relaying it, and never launder a subagent's confidence
-into your own. If a result fails grading because the agent was out of its depth,
-re-run it heavier rather than patching the output yourself. Full contract in
+into your own. The verdict vocabulary is fixed — `trust`, `partial`, `rerun`,
+`discard` — and it is recorded, not narrated: the mission's Assignments table is
+rendered from those events, so it cannot drift out of sync with what happened. If a
+result fails grading because the agent was out of its depth, re-run it heavier
+rather than patching the output yourself.
+
+Before charging Cartographer, check `scripts/dave.sh dossier get <project>` — a
+current map answers the charge for free. Full contract in
 [references/delegation-contract.md](references/delegation-contract.md).
 
 ### 5. Record — as you go, not at the end

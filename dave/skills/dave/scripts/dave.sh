@@ -84,9 +84,20 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
   intake <source>           archive a board pasted on stdin, print path
 
  missions
-  mission new <name>        create a mission brief from the template, print path
-  mission show <slug>       print a mission brief
-  mission list              list mission slugs
+  mission new <name>        create a mission brief  [--project P] [--ref R]
+  mission open <slug>       make it the active mission (assign then defaults to it)
+  mission close <slug>      close it  [--outcome TEXT]
+  mission show <slug>       the brief, with its assignments table rendered
+  mission list              missions  [--open] [--project P] [--json]
+  mission assign [m] <agent> <charge>   record a delegation, print its id
+                            [--model M] [--ref R]
+  mission record <id> --verdict <trust|partial|rerun|discard> [--summary TEXT]
+  mission status [slug]     charges still outstanding
+  mission pack <slug> --agent <name>    assemble the five-part briefing
+
+ dossiers
+  dossier set [slug]        cache a codebase map, read from stdin
+  dossier get [slug]        print it, with how far the repo has moved since
 
 Exit codes: 3 = not set up (run init) · 4 = state schema is behind (run migrate)
 HELP
@@ -112,6 +123,7 @@ main() {
     standup) cmd_standup "$@" ;;
     mission) cmd_mission "$@" ;;
     project) cmd_project "$@" ;;
+    dossier) cmd_dossier "$@" ;;
     scan) cmd_scan "$@" ;;
     time) cmd_time "$@" ;;
     next) cmd_next "$@" ;;
