@@ -156,6 +156,47 @@ which carries the objective, the done conditions, the undiscoverable context, th
 project's cached codebase map, *and* what the Scout already found and how it
 graded — so the second agent does not re-derive the first agent's work.
 
+## Example: the Monday sweep
+
+> /dave:review
+
+```
+Since 2026-09-01: 11h20m recorded (1h05m of it unverified).
+
+Slipping:
+  Maya — SSO demo build, due 2026-09-06 (OVERDUE)
+  webcrawler — weekly cadence, nothing for 24d, 3 uncommitted files
+
+Owed:
+  sso-rollout — 1 charge(s) outstanding, oldest sent 9d ago
+
+Rotting:
+  4 parked items older than the review threshold — oldest: rewrite the CSV exporter
+  AD-cache-warmup first logged 11d ago and still has no ticket
+
+Quiet and fine:
+  agent-skills (daily), gnome-music (maintenance), dnd-5e-api (dormant)
+
+Drift: 6 drift call(s): third-repo ×4, unlisted ×2 — 4 of them into webcrawler
+```
+
+Three things about that output are deliberate.
+
+**"Quiet and fine" is load-bearing.** `gnome-music` has not been committed to in two
+months and that is the arrangement working, not a finding — it is on a `maintenance`
+status with a `monthly` cadence. A sweep that listed it as a problem would be wrong,
+and a sweep that is wrong three times stops being read.
+
+**Drift is a pattern, not a scolding.** "Four of six went into webcrawler" is a fact
+about the work. D.A.V.E. does not follow it with an observation about focus; the
+persona forbids commenting on the user's character, and the review is not an
+exception to that.
+
+**What closed is not in there.** Closure is not recorded anywhere in the state tree,
+so the sweep says so rather than inferring it from the log and sounding certain.
+An inference presented as a record is the exact failure this design is built to
+avoid.
+
 ## Combining with other skills
 
 - **`codex-delegate`** — for implementation heavier than `constructor` should carry. D.A.V.E. writes the mission brief, Codex does the work, D.A.V.E. logs the outcome against the ref.

@@ -58,6 +58,11 @@
     "adhoc_grace_days": 5
   },
 
+  "_comment_parking": "review_after_days is how long a parked item may sit before the weekly sweep calls it rotting.",
+  "parking": {
+    "review_after_days": 14
+  },
+
   "_comment_hooks": "session_start injects your current focus and Now list as context at the start of every Claude Code session. Set false to make D.A.V.E. speak only when invoked.",
   "hooks": {
     "session_start": true

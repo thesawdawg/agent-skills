@@ -1,9 +1,53 @@
 # D.A.V.E. — implementation plan: projects, instrumentation, orchestration, cadence
 
-_Draft for review. Covers recommendations **A–D** from the design review._
+_Covers recommendations **A–D** from the design review._
 
 Working document, not plugin content. Delete it or fold it into `README.md` once
 the work lands.
+
+---
+
+## Status: all four phases landed
+
+| Phase | State | Commit |
+|---|---|---|
+| 0 — pre-flight, schema, libs | done | `refactor(dave): split the state layer into libs` |
+| A — project layer | done | `feat(dave): add the project layer` |
+| B — instrumentation | done | `feat(dave): instrument the rules that had no data behind them` |
+| C — orchestration | done | `feat(dave): make delegation a mechanism, not a doctrine` |
+| D — the sweep | done | `feat(dave): add the weekly sweep` |
+
+288 tests in `skills/dave/scripts/test/run.sh`; the pi installer selftest passes.
+
+**Decisions taken** (§2, all as recommended): bash + jq with a `lib/` split;
+projects own refs so `priorities.md` never changes format; one `missions.json` plus
+a global `assignments.jsonl`; raw time segments capped on read with unverified time
+reported separately.
+
+**Deviations from this plan, and why:**
+
+1. **Phase 0.1 found nothing to fix.** `Task` is the current name — the official
+   `pr-review-toolkit` ships the same declaration and plugin-dev documents it. The
+   four commands were already correct.
+2. **The lib split is wider than §2 sketched** — `state.sh`, `journal.sh`,
+   `track.sh` and `review.sh` as well, one per concern rather than the four named.
+3. **Missions do not stamp the log.** §C.3 proposed `active_mission` stamping log
+   lines so `mission show` could fold them in. It folds on the mission's **ref**
+   instead: the ref is already the join key across focus, logs and drift, so this
+   needed no change to the log format at all. `active_mission` survives as the
+   default target for `mission assign`.
+4. **`last_touched` now starts null.** Registering a project was stamping it as
+   touched, which made every newly registered project look active and permanently
+   un-slippable. Found by running the sweep against a realistic tree, not by tests.
+5. **No SessionEnd hook.** Cap-on-read (Decision 4) makes it unnecessary rather
+   than merely optional, so it was not worth another hook in every session.
+6. **Scheduling is documented, not installed.** A local systemd/cron snippet in the
+   README; nothing installs a timer, and the cloud-routine trap from §D.3 is called
+   out where someone would otherwise reach for it.
+
+**Still open:** everything in **E** and **F**. `~/.dave` as a git repo is the one
+worth doing next — the state tree got considerably more valuable across these four
+phases, and it still has no history and no rollback.
 
 ---
 

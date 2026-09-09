@@ -28,6 +28,8 @@ DAVE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DAVE_SCRIPT_DIR/lib/project.sh"
 # shellcheck source=lib/track.sh
 . "$DAVE_SCRIPT_DIR/lib/track.sh"
+# shellcheck source=lib/review.sh
+. "$DAVE_SCRIPT_DIR/lib/review.sh"
 
 cmd_help() {
   cat <<'HELP'
@@ -42,6 +44,7 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
 
  orientation
   brief                     composite read: project, focus, priorities, today, parked
+  review [--days N]         the weekly sweep: what is slipping, owed, rotting  [--json]
   priorities                print priorities.md
 
  projects
@@ -113,6 +116,7 @@ main() {
     config) cmd_config "$@" ;;
     state) cmd_state "$@" ;;
     brief) cmd_brief "$@" ;;
+    review) cmd_review "$@" ;;
     priorities) cmd_priorities "$@" ;;
     focus) cmd_focus "$@" ;;
     drift) cmd_drift "$@" ;;

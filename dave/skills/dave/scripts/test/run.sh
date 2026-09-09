@@ -695,6 +695,147 @@ It is a crawler.
   assert_contains "an unknown commit is admitted" "$(dave dossier get repo)" "no longer in this repository"
 }
 
+# -------------------------------------------------------------------- review
+
+# Builds a repo whose only commit is dated <age> days ago.
+mkrepo() {
+  local d="$1" when="$2"
+  mkdir -p "$d"
+  git -C "$d" init -q
+  git -C "$d" config user.email t@t; git -C "$d" config user.name t
+  echo x > "$d/f"; git -C "$d" add -A
+  GIT_COMMITTER_DATE="$when" GIT_AUTHOR_DATE="$when" git -C "$d" commit -qm "feat: seed"
+}
+
+test_review_empty() {
+  dave init >/dev/null
+  local out; out="$(dave review)"
+  assert_exit "review on a fresh tree exits 0" 0 dave review
+  case "$out" in
+    *Slipping*|*Rotting*|*Owed*) no "a fresh tree produces no alarms" "found a findings section" ;;
+    *) ok "a fresh tree produces no alarms" ;;
+  esac
+  assert_contains "review always states the closure gap" "$out" "not recorded anywhere"
+  assert_contains "review names the window" "$out" "Since "
+  assert_eq "review --json is consumable" "7" "$(dave review --json | jq -r '.window.days')"
+}
+
+test_review_cadence() {
+  dave init >/dev/null
+  local root="$DAVE_HOME/work"
+  mkrepo "$root/daily-one"  "$(date -d '-1 day' -Iseconds)"
+  mkrepo "$root/weekly-one" "$(date -d '-24 day' -Iseconds)"
+  mkrepo "$root/maint-one"  "$(date -d '-60 day' -Iseconds)"
+  mkrepo "$root/dormant-one" "$(date -d '-400 day' -Iseconds)"
+  dave project add "$root/daily-one"   --cadence daily >/dev/null
+  dave project add "$root/weekly-one"  --cadence weekly >/dev/null
+  dave project add "$root/maint-one"   --cadence monthly >/dev/null
+  dave project status maint-one maintenance >/dev/null
+  dave project add "$root/dormant-one" --cadence dormant >/dev/null
+
+  local j; j="$(dave review --json)"
+  assert_eq "an active weekly project 24d quiet is slipping" "true" \
+    "$(printf '%s' "$j" | jq -r '.projects[] | select(.slug == "weekly-one") | .slipping')"
+  assert_eq "a daily project committed yesterday is fine" "false" \
+    "$(printf '%s' "$j" | jq -r '.projects[] | select(.slug == "daily-one") | .slipping')"
+  # The two that keep the sweep honest.
+  assert_eq "a maintenance project quiet for 60d is not a finding" "false" \
+    "$(printf '%s' "$j" | jq -r '.projects[] | select(.slug == "maint-one") | .slipping')"
+  assert_eq "a dormant project never slips" "false" \
+    "$(printf '%s' "$j" | jq -r '.projects[] | select(.slug == "dormant-one") | .slipping')"
+
+  local out; out="$(dave review)"
+  assert_contains "slipping is reported with its number" "$out" "weekly-one — weekly cadence, nothing for 2"
+  assert_contains "quiet and fine is a real section" "$out" "Quiet and fine:"
+  assert_contains "the maintenance project is listed as fine" "$out" "maint-one (maintenance)"
+
+  # Registration is not activity: a project registered today whose repo has been
+  # silent for a month must still read as silent.
+  assert_eq "registering does not reset the clock" "null" \
+    "$(jq -r '.last_touched // "null"' "$DAVE_HOME/projects/weekly-one/project.json")"
+}
+
+test_review_findings() {
+  dave init >/dev/null
+  # An overdue promise outranks everything: it is the one thing here the user
+  # cannot see for themselves.
+  dave promise add "Maya" "SSO demo" "$(date -d '-2 day' +%F)" >/dev/null
+  dave promise add "Sam" "exporter" "$(date -d '+2 day' +%F)" >/dev/null
+  local out; out="$(dave review)"
+  assert_contains "an overdue promise is slipping" "$out" "Maya — SSO demo"
+  assert_contains "and it is marked overdue" "$out" "OVERDUE"
+  assert_contains "a future promise is only coming due" "$out" "Coming due:"
+  case "$(printf '%s' "$out" | sed -n '/Slipping:/,/^$/p')" in
+    *Sam*) no "a future promise is not slipping" "listed under Slipping" ;;
+    *) ok "a future promise is not slipping" ;;
+  esac
+
+  # Parked items rot.
+  printf -- '- [ ] rewrite the exporter _(parked %s 14:00, while on RM-1)_\n' \
+    "$(date -d '-30 day' +%F)" >> "$DAVE_HOME/parking-lot.md"
+  printf -- '- [ ] something recent _(parked %s 09:00)_\n' "$(date +%F)" >> "$DAVE_HOME/parking-lot.md"
+  assert_eq "only the old parked item counts" "1" "$(dave review --json | jq '.parked | length')"
+  assert_contains "rotting names the oldest" "$(dave review)" "rewrite the exporter"
+
+  # An AD- item that outlived its grace period should have become a ticket.
+  printf '\n1. **AD-cache-warmup** — warm it\n' >> "$DAVE_HOME/priorities.md"
+  printf -- '- `09:00` **AD-cache-warmup** — started\n' > "$DAVE_HOME/log/$(date -d '-11 day' +%F).md"
+  assert_contains "an aged ad-hoc item is flagged" "$(dave review)" "AD-cache-warmup first logged 11d ago"
+
+  # Blocked items stay prose and get handed over, not judged.
+  printf '\n## Blocked\n\n- **RM-88** — waiting on Ana for the schema\n' >> "$DAVE_HOME/priorities.md"
+  out="$(dave review)"
+  assert_contains "blocked items are handed to the reader" "$out" "which of these has nobody chased?"
+  assert_contains "and quoted verbatim" "$out" "waiting on Ana"
+}
+
+test_review_owed() {
+  dave init >/dev/null
+  dave mission new "sso rollout" >/dev/null
+  dave mission assign sso-rollout scout "have a look" >/dev/null
+  # A charge sent moments ago is not a finding.
+  case "$(dave review)" in
+    *Owed*) no "a fresh charge is not owed" "listed under Owed" ;;
+    *) ok "a fresh charge is not owed" ;;
+  esac
+  # One sent last week and never graded is exactly the thing to surface.
+  local old_ts; old_ts="$(date -d '-5 day' -Iseconds)"
+  jq -c --arg ts "$old_ts" '.ts = $ts' "$DAVE_HOME/assignments.jsonl" > "$DAVE_HOME/a.tmp" \
+    && mv "$DAVE_HOME/a.tmp" "$DAVE_HOME/assignments.jsonl"
+  local out; out="$(dave review)"
+  assert_contains "an aged open charge is owed" "$out" "sso-rollout — 1 charge(s) outstanding"
+  assert_contains "and it says how old" "$out" "oldest sent 5d ago"
+
+  # Grading it closes the loop.
+  dave mission record "sso-rollout#1" --verdict trust >/dev/null
+  case "$(dave review)" in
+    *"charge(s) outstanding"*) no "a graded charge stops being owed" "still listed" ;;
+    *) ok "a graded charge stops being owed" ;;
+  esac
+}
+
+test_review_drift() {
+  dave init >/dev/null
+  local root="$DAVE_HOME/work"; mkdir -p "$root/webcrawler"
+  dave project add "$root/webcrawler" >/dev/null
+  dave drift record third-repo continued --project webcrawler >/dev/null
+  dave drift record third-repo parked --project webcrawler >/dev/null
+  dave drift record unlisted promoted --project webcrawler >/dev/null
+  local out; out="$(dave review)"
+  assert_contains "drift is summarised by kind" "$out" "third-repo ×2"
+  assert_contains "and points at where it went" "$out" "into webcrawler"
+  # Old events fall outside the window rather than accumulating forever. Aged
+  # explicitly rather than by asking for a zero-day window: the boundary is
+  # inclusive and timestamps are second-resolution, so a zero-day window is a
+  # race with the clock rather than a test.
+  dave drift record no-focus parked >/dev/null
+  jq --arg old "$(date -d '-30 day' -Iseconds)" \
+     '.drift_events[3].at = $old' "$DAVE_HOME/state.json" > "$DAVE_HOME/s.tmp" \
+    && mv "$DAVE_HOME/s.tmp" "$DAVE_HOME/state.json"
+  assert_eq "the window excludes an old event" "3" "$(dave review --json | jq '.drift | length')"
+  assert_eq "a wider window includes it" "4" "$(dave review --days 60 --json | jq '.drift | length')"
+}
+
 # ------------------------------------------------------------------- helpers
 
 test_helpers() {
@@ -757,7 +898,7 @@ test_git_probe() {
 test_help() {
   local out; out="$(dave help)"
   for c in init migrate brief focus drift park log standup mission intake project \
-           scan time next promise dossier; do
+           scan time next promise dossier review; do
     assert_contains "help lists $c" "$out" "  $c"
   done
   assert_exit "an unknown command fails" 1 dave frobnicate
@@ -772,6 +913,7 @@ for t in init init_idempotent not_set_up_exits_3 migrate focus drift journal \
          hook_schema_note brief focus_stack time_ledger time_open_cap \
          drift_events next promise scan brief_phase_b \
          mission_ledger mission_legacy mission_pack dossier \
+         review_empty review_cadence review_findings review_owed review_drift \
          helpers git_probe help; do
   run_test "$t"
 done
