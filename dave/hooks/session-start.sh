@@ -13,6 +13,12 @@ CONFIG="$DAVE_HOME/config.json"
 STATE="$DAVE_HOME/state.json"
 PRIORITIES="$DAVE_HOME/priorities.md"
 
+# Derived from this file rather than $CLAUDE_PLUGIN_ROOT, so the hook works the
+# same whether the harness exports that variable or not.
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DAVE_SH="$HOOK_DIR/../skills/dave/scripts/dave.sh"
+[ -x "$DAVE_SH" ] || DAVE_SH="${CLAUDE_PLUGIN_ROOT:-}/skills/dave/scripts/dave.sh"
+
 # Not set up, or no jq to read the config with: say nothing at all.
 [ -f "$CONFIG" ] || exit 0
 command -v jq >/dev/null 2>&1 || exit 0
@@ -25,6 +31,25 @@ enabled="$(jq -r 'if .hooks.session_start == null then true else .hooks.session_
 [ "$enabled" = "false" ] && exit 0
 
 emit() { printf '%s\n' "$1"; }
+
+# Which project this session is sitting in, if any. Exit 4 means the state tree
+# predates this version — say so once, quietly, rather than degrading in silence
+# for weeks.
+project_block=""
+schema_note=""
+if [ -x "$DAVE_SH" ]; then
+  rc=0
+  slug="$(cd "${CLAUDE_PROJECT_DIR:-$PWD}" 2>/dev/null && "$DAVE_SH" project resolve 2>/dev/null)" || rc=$?
+  if [ "$rc" -eq 4 ]; then
+    schema_note="Note: the D.A.V.E. state tree is behind this version — run \`dave.sh migrate\`."
+  elif [ -n "${slug:-}" ] && [ -f "$DAVE_HOME/projects/$slug/project.json" ]; then
+    project_block="$(jq -r '
+      "Project: \(.name)\(if .name == .slug then "" else " (\(.slug))" end) — \(.status), \(.cadence) cadence" +
+      (if (.goal // "") == "" then "" else "\nGoal: \(.goal)" end) +
+      (if (.refs | length) == 0 then "" else "\nIts refs: \(.refs | join(", "))" end)
+    ' "$DAVE_HOME/projects/$slug/project.json" 2>/dev/null || true)"
+  fi
+fi
 
 focus_line="(none set)"
 if [ -f "$STATE" ]; then
@@ -55,10 +80,16 @@ if [ -f "$STATE" ]; then
   last_intake="$(jq -r '.last_intake // "never"' "$STATE" 2>/dev/null || echo "never")"
 fi
 
+# Only the parts that have something to say. An unregistered directory gets
+# exactly the block it got before this existed.
+extra=""
+[ -n "$project_block" ] && extra="${project_block}"$'\n\n'
+[ -n "$schema_note" ]   && extra="${extra}${schema_note}"$'\n\n'
+
 context="$(cat <<CTX
 D.A.V.E. (dave plugin) is active. Priority state from ${DAVE_HOME}:
 
-Current focus: ${focus_line}
+${extra}Current focus: ${focus_line}
 
 Now (the operative definition of on-track):
 ${now_section}

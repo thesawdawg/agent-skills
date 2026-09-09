@@ -18,10 +18,11 @@ two capabilities are genuinely absent rather than merely different.
 |---|---|---|
 | Orchestrator skill | `skills/dave/SKILL.md` | ✅ direct — `/skill:dave` |
 | State layer (`dave.sh`) | bash + `jq` | ✅ direct — no harness features used |
-| 7 commands | `/dave:brief`, … | ✅ mapped to prompt templates — `/dave-brief`, … |
+| 8 commands | `/dave:brief`, … | ✅ mapped to prompt templates — `/dave-brief`, … |
 | 9 agents | real subagents | ⚠️ **role reference docs**, run as focused passes — unless the official `subagent/` extension is installed |
 | Redmine | MCP server | ⚠️ **keep the MCP** via `pi-mcp-adapter`, or fall back to REST over `curl` |
 | SessionStart hook | injects focus automatically | ❌ **no hooks in pi** — run `/dave-brief` yourself, or use the `AGENTS.md` stanza |
+| Project resolution | hook resolves cwd → project | ⚠️ **works, but not automatically** — `dave.sh project resolve` still answers; nothing calls it for you |
 
 The two ⚠️ rows still work; they take a different route. The ❌ row does not exist
 on pi, so the drift watch is only active once something has actually read the list
@@ -150,7 +151,9 @@ DAVE_HOME=/path/to/state ~/.pi/agent/skills/dave/scripts/dave.sh brief
 The community `pi-persistent-term` extension removes this constraint, at the cost
 of running third-party TypeScript with your full permissions.
 
-**4. No hooks.** Nothing injects your focus at session start. Either run
+**4. No hooks.** Nothing injects your focus or names the project you are sitting
+in at session start. `dave.sh project resolve` and `dave.sh project show` work
+exactly as they do under Claude Code — the gap is that nothing runs them for you. Either run
 `/dave-brief` when you sit down, or install with `--with-agents-md` so the
 instruction to do so lives in `~/.pi/agent/AGENTS.md`, which pi loads globally.
 Note the difference honestly: the stanza is *an instruction to check*, not an

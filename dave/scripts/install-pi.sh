@@ -258,10 +258,14 @@ do_selftest() {
   echo "selftest: assertions"
   check "SKILL.md installed"            "[ -f '$tmp/skills/dave/SKILL.md' ]"
   check "dave.sh installed executable"  "[ -x '$tmp/skills/dave/scripts/dave.sh' ]"
+  check "script libs installed"         "[ -f '$tmp/skills/dave/scripts/lib/common.sh' ]"
+  check "state layer runs installed"    "DAVE_HOME='$tmp/state' '$tmp/skills/dave/scripts/dave.sh' init >/dev/null"
   check "templates copied"              "[ -f '$tmp/skills/dave/templates/config-template.json' ]"
   check "redmine-rest reference copied" "[ -f '$tmp/skills/dave/references/redmine-rest.md' ]"
   check "9 roles converted"             "[ \$(ls '$tmp/skills/dave/references/roles' | wc -l) -eq 9 ]"
-  check "7 prompts converted"           "[ \$(ls '$tmp/prompts' | wc -l) -eq 7 ]"
+  # Counted from the source rather than hardcoded: adding a command should not
+  # mean remembering to bump a number in a test.
+  check "every command converted"       "[ \$(ls '$tmp/prompts' | wc -l) -eq \$(ls '$SRC/commands' | wc -l) ]"
   check "role frontmatter stripped"     "! grep -q '^model: ' '$tmp/skills/dave/references/roles/scout.md'"
   check "role name kept"                "grep -q '^name: scout' '$tmp/skills/dave/references/roles/scout.md'"
   check "no \$ARGUMENTS left in prompts" "! grep -rq 'ARGUMENTS' '$tmp/prompts'"

@@ -59,6 +59,7 @@ what does and doesn't carry over. The short version:
 |---|---|
 | `/dave:brief` | Orients you — focus, what's in Now, what's stale, what's parked |
 | `/dave:focus <ref>` | Locks onto one item so drift can be measured against it |
+| `/dave:project [slug]` | Registers or reports on a project — the container an item belongs to |
 | `/dave:intake [source]` | Ingests a board or Redmine, reconciles into one ranked list |
 | `/dave:check` | An honest drift check, right now |
 | `/dave:park <thing>` | Captures a distraction without acting on it |
