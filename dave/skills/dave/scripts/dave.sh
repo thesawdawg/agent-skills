@@ -24,6 +24,8 @@ DAVE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DAVE_SCRIPT_DIR/lib/journal.sh"
 # shellcheck source=lib/mission.sh
 . "$DAVE_SCRIPT_DIR/lib/mission.sh"
+# shellcheck source=lib/project.sh
+. "$DAVE_SCRIPT_DIR/lib/project.sh"
 
 cmd_help() {
   cat <<'HELP'
@@ -37,8 +39,18 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
   state                     print state.json
 
  orientation
-  brief                     composite read: identity, focus, priorities, today, parked
+  brief                     composite read: project, focus, priorities, today, parked
   priorities                print priorities.md
+
+ projects
+  project add <path>        register a project  [--name --slug --cadence --goal --status]
+  project list              registered projects  [--status S] [--json]
+  project show [slug]       one project: refs, git state, open missions
+  project status <slug> <s> active | paused | maintenance | archived
+  project link <slug> <ref> attach a priority ref to a project  (also: unlink)
+  project of <ref>          which project owns a ref
+  project resolve [path]    which project a directory belongs to (silent if none)
+  project touch [slug]      stamp last activity
 
  focus
   focus set <ref> [label]   set the current focus
@@ -82,6 +94,7 @@ main() {
     today) cmd_today "$@" ;;
     standup) cmd_standup "$@" ;;
     mission) cmd_mission "$@" ;;
+    project) cmd_project "$@" ;;
     intake) cmd_intake "$@" ;;
     help|-h|--help) cmd_help ;;
     *) die "unknown command: $cmd (try: dave.sh help)" ;;

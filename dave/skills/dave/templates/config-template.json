@@ -37,6 +37,15 @@
     "ranking_factors": ["commitment made to someone", "deadline", "blocking others", "effort", "energy fit"]
   },
 
+  "_comment_projects": "The project layer. root is where your work lives; with autodiscover on, `project list` names unregistered directories under it as candidates without adding them. use_gh lets a scan read PRs via the gh CLI where a remote is GitHub. Cadence per project is what stops the weekly review from treating every quiet repo as a problem.",
+  "projects": {
+    "root": "",
+    "autodiscover": false,
+    "use_gh": false,
+    "scan_ttl_seconds": 300,
+    "dossier_stale_commits": 50
+  },
+
   "_comment_hooks": "session_start injects your current focus and Now list as context at the start of every Claude Code session. Set false to make D.A.V.E. speak only when invoked.",
   "hooks": {
     "session_start": true

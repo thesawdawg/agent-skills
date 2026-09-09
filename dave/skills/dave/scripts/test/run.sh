@@ -164,11 +164,156 @@ test_brief() {
   dave focus set RM-4471 "retry" >/dev/null
   dave log "something happened" >/dev/null
   local out; out="$(dave brief)"
-  for section in "=== IDENTITY ===" "=== FOCUS ===" "=== PRIORITIES ===" "=== TODAY" "=== PARKED (open) ===" "=== LAST INTAKE ==="; do
+  assert_contains "brief says when there is no project" "$out" "not in a registered project"
+  local root="$DAVE_HOME/work"; mkdir -p "$root/webcrawler"
+  dave project add "$root/webcrawler" --goal "crawl politely" >/dev/null
+  dave project link webcrawler RM-4471 >/dev/null
+  local inproj; inproj="$(cd "$root/webcrawler" && dave brief)"
+  assert_contains "brief resolves the project from cwd" "$inproj" "webcrawler  ·  active"
+  assert_contains "brief shows the project goal" "$inproj" "crawl politely"
+  assert_contains "brief shows linked refs" "$inproj" "refs: RM-4471"
+
+  for section in "=== IDENTITY ===" "=== PROJECT" "=== FOCUS ===" "=== PRIORITIES ===" "=== TODAY" "=== PARKED (open) ===" "=== LAST INTAKE ==="; do
     assert_contains "brief has $section" "$out" "$section"
   done
   assert_contains "brief reports elapsed time" "$out" "elapsed:"
   assert_contains "brief stamps last_brief" "$(jq -r .last_brief "$DAVE_HOME/state.json")" "-"
+}
+
+# ------------------------------------------------------------------ projects
+
+test_project() {
+  dave init >/dev/null
+  local root="$DAVE_HOME/work"; mkdir -p "$root/webcrawler/src/deep"
+  assert_contains "project list when empty" "$(dave project list)" "(no projects registered"
+
+  local out; out="$(dave project add "$root/webcrawler" --goal "crawl politely" --cadence daily)"
+  assert_contains "project add confirms" "$out" "registered: webcrawler"
+  assert_eq "project add stores a canonical path" "$root/webcrawler" \
+    "$(jq -r .path "$DAVE_HOME/projects/webcrawler/project.json")"
+  assert_eq "project add defaults status" "active" \
+    "$(jq -r .status "$DAVE_HOME/projects/webcrawler/project.json")"
+  assert_eq "project add takes cadence" "daily" \
+    "$(jq -r .cadence "$DAVE_HOME/projects/webcrawler/project.json")"
+
+  assert_contains "project list shows it" "$(dave project list)" "webcrawler"
+  assert_exit "project add refuses a duplicate slug" 1 dave project add "$root/webcrawler"
+  mkdir -p "$root/other"
+  assert_exit "project add refuses a duplicate path" 1 \
+    dave project add "$root/webcrawler" --slug second
+  assert_exit "project add refuses a non-directory" 1 dave project add "$root/nope"
+  assert_exit "project add validates cadence" 1 dave project add "$root/other" --cadence hourly
+  assert_exit "project add validates status" 1 dave project add "$root/other" --status busy
+
+  dave project status webcrawler paused >/dev/null
+  assert_eq "project status changes it" "paused" \
+    "$(jq -r .status "$DAVE_HOME/projects/webcrawler/project.json")"
+  assert_exit "project status validates" 1 dave project status webcrawler elsewhere
+  assert_contains "project list filters by status" "$(dave project list --status paused)" "webcrawler"
+  assert_eq "project list --status excludes" "0" \
+    "$(dave project list --status active --json | jq length)"
+
+  dave project link webcrawler RM-4471 >/dev/null
+  dave project link webcrawler RM-4471 >/dev/null   # idempotent
+  assert_eq "project link is a set" "1" \
+    "$(jq -r '.refs | length' "$DAVE_HOME/projects/webcrawler/project.json")"
+  assert_eq "project of finds the owner" "webcrawler" "$(dave project of RM-4471)"
+  assert_eq "project of an unlinked ref is silent" "" "$(dave project of RM-9999)"
+
+  dave project add "$root/other" >/dev/null
+  assert_exit "project link refuses a ref owned elsewhere" 1 dave project link other RM-4471
+  dave project unlink webcrawler RM-4471 >/dev/null
+  assert_eq "project unlink removes it" "0" \
+    "$(jq -r '.refs | length' "$DAVE_HOME/projects/webcrawler/project.json")"
+
+  assert_exit "project show on an unknown slug fails" 1 dave project show nosuch
+
+  # A directory name that slugifies must still find its project — the user should
+  # not have to remember what registration did to the name.
+  mkdir -p "$root/dnd_5e_api"
+  dave project add "$root/dnd_5e_api" >/dev/null
+  assert_eq "add slugifies the directory name" "dnd-5e-api" \
+    "$(jq -r .slug "$DAVE_HOME/projects/dnd-5e-api/project.json")"
+  assert_exit "status accepts the raw directory name" 0 dave project status dnd_5e_api paused
+  assert_eq "the raw name reached the right project" "paused" \
+    "$(jq -r .status "$DAVE_HOME/projects/dnd-5e-api/project.json")"
+  assert_exit "show accepts the raw directory name" 0 dave project show dnd_5e_api
+  assert_exit "link accepts the raw directory name" 0 dave project link dnd_5e_api RM-77
+  local show; show="$(dave project show webcrawler)"
+  assert_contains "project show has the header" "$show" "=== PROJECT ==="
+  assert_contains "project show reports goal" "$show" "crawl politely"
+  assert_contains "project show handles a non-repo" "$show" "(not a git repository)"
+
+  # A linked ref that the priority list no longer mentions is surfaced, not hidden.
+  dave project link webcrawler RM-4471 >/dev/null
+  assert_contains "project show flags a ref off the list" "$(dave project show webcrawler)" \
+    "(not in priorities.md)"
+  printf '\n1. **RM-4471** — retry\n' >> "$DAVE_HOME/priorities.md"
+  case "$(dave project show webcrawler)" in
+    *"(not in priorities.md)"*) no "project show clears the flag once listed" "still flagged" ;;
+    *) ok "project show clears the flag once listed" ;;
+  esac
+
+  local before; before="$(jq -r .last_touched "$DAVE_HOME/projects/webcrawler/project.json")"
+  sleep 1
+  dave project touch webcrawler >/dev/null
+  case "$(jq -r .last_touched "$DAVE_HOME/projects/webcrawler/project.json")" in
+    "$before") no "project touch stamps the time" "unchanged" ;;
+    *) ok "project touch stamps the time" ;;
+  esac
+}
+
+test_project_resolve() {
+  dave init >/dev/null
+  local root="$DAVE_HOME/work"; mkdir -p "$root/webcrawler/src/deep/dir"
+  dave project add "$root/webcrawler" >/dev/null
+
+  assert_eq "resolve at the project root" "webcrawler" "$(dave project resolve "$root/webcrawler")"
+  assert_eq "resolve from a nested path" "webcrawler" \
+    "$(dave project resolve "$root/webcrawler/src/deep/dir")"
+  assert_eq "resolve outside any project is silent" "" "$(dave project resolve "$root")"
+  assert_exit "resolve outside any project still exits 0" 0 dave project resolve /tmp
+  assert_eq "resolve on a missing path is silent" "" "$(dave project resolve "$root/gone")"
+
+  # cwd, not just an argument — this is how the hook and brief call it.
+  assert_eq "resolve defaults to cwd" "webcrawler" \
+    "$(cd "$root/webcrawler/src" && dave project resolve)"
+  assert_eq "project show defaults to cwd" "webcrawler" \
+    "$(cd "$root/webcrawler/src" && dave project show | sed -n 's/^slug: //p')"
+}
+
+# An un-migrated tree must degrade to a note, never to a broken hook.
+test_hook_schema_note() {
+  dave init >/dev/null
+  jq 'del(.schema_version)' "$DAVE_HOME/state.json" > "$DAVE_HOME/s" && mv "$DAVE_HOME/s" "$DAVE_HOME/state.json"
+  local ctx
+  ctx="$(bash "$TEST_DIR/../../../../hooks/session-start.sh" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext')"
+  assert_contains "hook notes a stale schema" "$ctx" "run \`dave.sh migrate\`"
+  dave migrate >/dev/null
+  ctx="$(bash "$TEST_DIR/../../../../hooks/session-start.sh" 2>/dev/null | jq -r '.hookSpecificOutput.additionalContext')"
+  case "$ctx" in
+    *"dave.sh migrate"*) no "hook drops the note after migrating" "note still present" ;;
+    *) ok "hook drops the note after migrating" ;;
+  esac
+}
+
+test_project_candidates() {
+  dave init >/dev/null
+  local root="$DAVE_HOME/work"; mkdir -p "$root/a" "$root/b"
+  dave project add "$root/a" >/dev/null
+  json_edit_config() { local t; t="$(mktemp)"; jq "$1" "$DAVE_HOME/config.json" > "$t" && mv "$t" "$DAVE_HOME/config.json"; }
+  json_edit_config ".projects.root = \"$root\""
+  case "$(dave project list)" in
+    *unregistered*) no "candidates stay off unless asked" "listed with autodiscover false" ;;
+    *) ok "candidates stay off unless asked" ;;
+  esac
+  json_edit_config '.projects.autodiscover = true'
+  local out; out="$(dave project list)"
+  assert_contains "autodiscover names a candidate" "$out" "$root/b"
+  case "$out" in
+    *"unregistered under"*"/a"*) no "autodiscover skips registered projects" "listed /a" ;;
+    *) ok "autodiscover skips registered projects" ;;
+  esac
 }
 
 # ------------------------------------------------------------------- helpers
@@ -232,7 +377,7 @@ test_git_probe() {
 
 test_help() {
   local out; out="$(dave help)"
-  for c in init migrate brief focus drift park log standup mission intake; do
+  for c in init migrate brief focus drift park log standup mission intake project; do
     assert_contains "help lists $c" "$out" "  $c"
   done
   assert_exit "an unknown command fails" 1 dave frobnicate
@@ -243,7 +388,9 @@ test_help() {
 command -v jq >/dev/null 2>&1 || { echo "jq is required to run these tests"; exit 1; }
 
 for t in init init_idempotent not_set_up_exits_3 migrate focus drift journal \
-         intake mission brief helpers git_probe help; do
+         intake mission project project_resolve project_candidates \
+         hook_schema_note brief \
+         helpers git_probe help; do
   run_test "$t"
 done
 

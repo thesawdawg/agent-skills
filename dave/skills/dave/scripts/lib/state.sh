@@ -69,6 +69,19 @@ cmd_brief() {
   echo "=== IDENTITY ==="
   jq -r '"user: \(.user.name // "unknown")\naddress_as: \(.user.address_as // "-")\nwork_hours: \(.user.work_hours // "-")"' "$CONFIG"
   echo
+  # Project before list: orientation starts with where you are, and only then
+  # with what is ranked. In an unregistered directory this stays one line.
+  echo "=== PROJECT (from $PWD) ==="
+  local slug; slug="$(_project_resolve)"
+  if [ -z "$slug" ]; then
+    echo "(this directory is not in a registered project)"
+  else
+    jq -r '"\(.slug)\(if .name == .slug then "" else " — \(.name)" end)  ·  \(.status) · \(.cadence)",
+           "goal: \(if (.goal // "") == "" then "(none set)" else .goal end)",
+           "refs: \(if (.refs | length) == 0 then "(none linked)" else (.refs | join(", ")) end)"' \
+      "$(_project_file "$slug")"
+  fi
+  echo
   echo "=== FOCUS ==="
   if [ "$(jq -r '.focus // "null"' "$STATE")" = "null" ]; then
     echo "(none set)"
