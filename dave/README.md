@@ -61,6 +61,7 @@ what does and doesn't carry over. The short version:
 | `/dave:focus <ref>` | Locks onto one item so drift can be measured against it |
 | `/dave:project [slug]` | Registers or reports on a project — the container an item belongs to |
 | `/dave:mission [slug]` | Opens, inspects or closes a mission, and shows what's still owed |
+| `/dave:review [days]` | The weekly sweep — slipping, owed, rotting, and quiet and fine |
 | `/dave:intake [source]` | Ingests a board or Redmine, reconciles into one ranked list |
 | `/dave:check` | An honest drift check, right now |
 | `/dave:park <thing>` | Captures a distraction without acting on it |
@@ -152,6 +153,13 @@ orienting at session start costs one tool call rather than five. Run
 behind it. Scribe quotes both, because a time entry that quietly rounds unverified
 minutes into the total becomes someone's billing data.
 
+**The sweep separates measured from judged.** `dave.sh review` reports project
+cadence against real git and log activity, overdue promises, ungraded charges,
+rotting parked items and drift patterns — and then hands over the things it cannot
+compute: which blockers nobody has chased, and what actually closed. Closure isn't
+recorded anywhere, so the review says so every time rather than inferring it and
+sounding certain.
+
 **A delegation is a record, not a paragraph.** `mission assign` returns an id;
 `mission record` grades it `trust`/`partial`/`rerun`/`discard`. The mission's
 Assignments table is rendered from those events, so it cannot drift out of sync
@@ -162,6 +170,24 @@ never came back.
 one; the session-start hook then leads with the project you're actually sitting in.
 Rank stays global — a per-project ranking would let three projects each hold a
 number-one item, which is the problem this exists to solve.
+
+## Running the sweep on a schedule
+
+`/dave:review` is worth a weekly habit. If you want it to fire on its own, use a
+**local** scheduler — a systemd user timer or a cron entry:
+
+```
+# ~/.config/systemd/user/dave-review.service   (and a matching .timer, Mon 09:00)
+[Service]
+Type=oneshot
+WorkingDirectory=%h/Projects
+ExecStart=/usr/bin/claude -p "/dave:review"
+```
+
+**Not a cloud routine.** Scheduled cloud agents don't have your `~/.dave`, so a
+cloud `/dave:review` would produce a confident review of nothing. Nothing here
+installs a timer for you either: a productivity plugin that adds a system timer
+without being asked is a productivity plugin that gets uninstalled.
 
 ## Design notes
 

@@ -18,7 +18,7 @@ two capabilities are genuinely absent rather than merely different.
 |---|---|---|
 | Orchestrator skill | `skills/dave/SKILL.md` | ✅ direct — `/skill:dave` |
 | State layer (`dave.sh`) | bash + `jq` | ✅ direct — no harness features used |
-| 8 commands | `/dave:brief`, … | ✅ mapped to prompt templates — `/dave-brief`, … |
+| 10 commands | `/dave:brief`, … | ✅ mapped to prompt templates — `/dave-brief`, … |
 | 9 agents | real subagents | ⚠️ **role reference docs**, run as focused passes — unless the official `subagent/` extension is installed |
 | Redmine | MCP server | ⚠️ **keep the MCP** via `pi-mcp-adapter`, or fall back to REST over `curl` |
 | SessionStart hook | injects focus automatically | ❌ **no hooks in pi** — run `/dave-brief` yourself, or use the `AGENTS.md` stanza |

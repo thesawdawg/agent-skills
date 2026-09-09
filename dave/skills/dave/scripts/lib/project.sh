@@ -87,10 +87,13 @@ _project_add() {
   [ -n "$clash" ] && die "that path is already registered as: $clash"
 
   mkdir -p "$(_project_dir "$slug")"
+  # last_touched starts null deliberately. Registering a project is not working
+  # on it, and stamping it here would make every newly registered project look
+  # active — which is exactly the state the weekly sweep needs to contradict.
   jq -n --arg slug "$slug" --arg name "$name" --arg path "$path" --arg status "$status" \
-        --arg goal "$goal" --arg cadence "$cadence" --arg added "$(today)" --arg ts "$(now_iso)" \
+        --arg goal "$goal" --arg cadence "$cadence" --arg added "$(today)" \
     '{slug:$slug, name:$name, path:$path, status:$status, goal:$goal, cadence:$cadence,
-      refs:[], added:$added, last_touched:$ts}' > "$(_project_file "$slug")"
+      refs:[], added:$added, last_touched:null}' > "$(_project_file "$slug")"
   echo "registered: $slug — $path ($status, $cadence)"
 }
 
@@ -153,7 +156,7 @@ _project_show() {
     "path: \(.path)",
     "status: \(.status) · cadence: \(.cadence)",
     "goal: \(if (.goal // "") == "" then "(none set)" else .goal end)",
-    "added: \(.added) · last touched: \(.last_touched)"'
+    "added: \(.added) · last touched: \(.last_touched // "(not yet)")"'
 
   echo
   echo "=== REFS ==="
@@ -295,20 +298,34 @@ _scan_gh_prs() {
     | jq 'length' 2>/dev/null || true
 }
 
+# Local branches with no commit in 30 days. A count, not a list: the point is
+# "this repository has accumulated loose ends", and naming eleven of them in a
+# weekly sweep is how the sweep stops being read.
+_scan_stale_branches() {
+  local path="$1" cutoff
+  git -C "$path" rev-parse --git-dir >/dev/null 2>&1 || { echo 0; return 0; }
+  cutoff="$(date -d '-30 day' +%s)"
+  git -C "$path" --no-optional-locks for-each-ref --format='%(committerdate:unix)' refs/heads 2>/dev/null \
+    | awk -v c="$cutoff" '$1 < c { n++ } END { print n+0 }' || echo 0
+}
+
 _scan_probe_all() {
   local include_archived="$1"
   local all; all="$(_projects_all)"
-  local entries="{}" slug path status probe days prs
+  local entries="{}" slug path status probe days prs stale_branches
   while IFS=$'\t' read -r slug path status; do
     [ -n "$slug" ] || continue
     [ "$include_archived" -eq 0 ] && [ "$status" = "archived" ] && continue
     probe="$(git_probe "$path")"
     days="$(_scan_days_since "$(printf '%s' "$probe" | jq -r '.last_commit // ""')")"
     prs="$(_scan_gh_prs "$path")"
+    stale_branches="$(_scan_stale_branches "$path")"
     entries="$(jq -c --arg slug "$slug" --arg status "$status" \
       --argjson probe "$probe" \
       --argjson days "${days:-null}" --argjson prs "${prs:-null}" \
-      '.[$slug] = ($probe + {slug:$slug, status:$status, days_since_commit:$days, open_prs:$prs})' \
+      --argjson stale "${stale_branches:-0}" \
+      '.[$slug] = ($probe + {slug:$slug, status:$status, days_since_commit:$days,
+                             open_prs:$prs, stale_branches:$stale})' \
       <<< "$entries")"
   done < <(printf '%s' "$all" | jq -r '.[] | "\(.slug)\t\(.path)\t\(.status)"')
   printf '%s\n' "$entries"
