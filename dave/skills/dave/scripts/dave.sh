@@ -30,6 +30,8 @@ DAVE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DAVE_SCRIPT_DIR/lib/track.sh"
 # shellcheck source=lib/review.sh
 . "$DAVE_SCRIPT_DIR/lib/review.sh"
+# shellcheck source=lib/sync.sh
+. "$DAVE_SCRIPT_DIR/lib/sync.sh"
 
 cmd_help() {
   cat <<'HELP'
@@ -102,6 +104,12 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
   dossier set [slug]        cache a codebase map, read from stdin
   dossier get [slug]        print it, with how far the repo has moved since
 
+ sync
+  sync setup <remote-url>   make ~/.dave a git repo tracking a private remote
+  sync pull                 rebase local state onto remote (runs inside brief)
+  sync push                 commit + push state (run at session closeout)
+  sync status               ahead/behind/dirty vs remote
+
 Exit codes: 3 = not set up (run init) · 4 = state schema is behind (run migrate)
 HELP
 }
@@ -133,6 +141,7 @@ main() {
     next) cmd_next "$@" ;;
     promise) cmd_promise "$@" ;;
     intake) cmd_intake "$@" ;;
+    sync) cmd_sync "$@" ;;
     help|-h|--help) cmd_help ;;
     *) die "unknown command: $cmd (try: dave.sh help)" ;;
   esac

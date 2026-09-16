@@ -68,6 +68,13 @@
     "session_start": true
   },
 
+  "_comment_sync": "Cross-device persistence: ~/.dave is a git repo; config.json is gitignored so these settings stay per-device. `dave.sh sync setup <remote-url>` fills remote/branch and flips enabled. Pull runs at the top of `brief`; push is `dave.sh sync push` at closeout.",
+  "sync": {
+    "enabled": false,
+    "remote": "",
+    "branch": "main"
+  },
+
   "_comment_roster": "Which specialist agents D.A.V.E. may delegate to. Remove any you don't want him reaching for.",
   "_comment_models": "Which model each agent runs on. Overrides the agent's own default; an explicit model on a single call overrides this. haiku for mechanical transformation, sonnet for structured analysis, opus where depth decides correctness. Set \"inherit\" to use the main session's model.",
   "models": {
