@@ -37,9 +37,42 @@
     "ranking_factors": ["commitment made to someone", "deadline", "blocking others", "effort", "energy fit"]
   },
 
+  "_comment_projects": "The project layer. root is where your work lives; with autodiscover on, `project list` names unregistered directories under it as candidates without adding them. use_gh lets a scan read PRs via the gh CLI where a remote is GitHub. Cadence per project is what stops the weekly review from treating every quiet repo as a problem.",
+  "projects": {
+    "root": "",
+    "autodiscover": false,
+    "use_gh": false,
+    "scan_ttl_seconds": 300,
+    "dossier_stale_commits": 50
+  },
+
+  "_comment_time": "max_segment_minutes caps an open focus when time is read. A focus left set overnight is reported as four hours and flagged, never as sixteen. Time with no log activity inside it is reported separately rather than folded into the total — an over-counting ledger is worse than none, because Scribe is forbidden from estimating hours and will quote this.",
+  "time": {
+    "max_segment_minutes": 240
+  },
+
+  "_comment_review": "The weekly sweep. promise_horizon_days is how far ahead brief looks for commitments coming due.",
+  "review": {
+    "day": "monday",
+    "promise_horizon_days": 3,
+    "adhoc_grace_days": 5
+  },
+
+  "_comment_parking": "review_after_days is how long a parked item may sit before the weekly sweep calls it rotting.",
+  "parking": {
+    "review_after_days": 14
+  },
+
   "_comment_hooks": "session_start injects your current focus and Now list as context at the start of every Claude Code session. Set false to make D.A.V.E. speak only when invoked.",
   "hooks": {
     "session_start": true
+  },
+
+  "_comment_sync": "Cross-device persistence: ~/.dave is a git repo; config.json is gitignored so these settings stay per-device. `dave.sh sync setup <remote-url>` fills remote/branch and flips enabled. Pull runs at the top of `brief`; push is `dave.sh sync push` at closeout. Until sync is set up, brief notes the gap at every orient — add \"declined\": true on a device that should stay standalone.",
+  "sync": {
+    "enabled": false,
+    "remote": "",
+    "branch": "main"
   },
 
   "_comment_roster": "Which specialist agents D.A.V.E. may delegate to. Remove any you don't want him reaching for.",

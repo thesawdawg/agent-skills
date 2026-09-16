@@ -5,6 +5,9 @@
 # context. Stays completely silent unless D.A.V.E. is actually set up and the user
 # has left the hook enabled — a productivity plugin that talks in every unrelated
 # session is a productivity plugin that gets uninstalled.
+#
+# Deployed at <install>/hooks/session-start.sh, a sibling of the skills/ dir —
+# not inside the skill itself, so the hook can outlive skill updates.
 
 set -uo pipefail
 
@@ -12,6 +15,9 @@ DAVE_HOME="${DAVE_HOME:-$HOME/.dave}"
 CONFIG="$DAVE_HOME/config.json"
 STATE="$DAVE_HOME/state.json"
 PRIORITIES="$DAVE_HOME/priorities.md"
+
+# Keep in step with SCHEMA_VERSION in scripts/lib/common.sh.
+SCHEMA_VERSION=2
 
 # Not set up, or no jq to read the config with: say nothing at all.
 [ -f "$CONFIG" ] || exit 0
@@ -23,8 +29,6 @@ command -v jq >/dev/null 2>&1 || exit 0
 enabled="$(jq -r 'if .hooks.session_start == null then true else .hooks.session_start end' \
   "$CONFIG" 2>/dev/null || echo true)"
 [ "$enabled" = "false" ] && exit 0
-
-emit() { printf '%s\n' "$1"; }
 
 focus_line="(none set)"
 if [ -f "$STATE" ]; then
@@ -55,6 +59,31 @@ if [ -f "$STATE" ]; then
   last_intake="$(jq -r '.last_intake // "never"' "$STATE" 2>/dev/null || echo "never")"
 fi
 
+# Housekeeping notes: one line each, raised once, then dropped. Each exists to
+# catch a gap the state itself cannot — a tree older than this script, and a
+# device nobody ever offered cross-device sync to.
+notes=""
+
+if [ -f "$STATE" ]; then
+  v="$(jq -r '.schema_version // 1' "$STATE" 2>/dev/null || echo 1)"
+  if [ "$v" -lt "$SCHEMA_VERSION" ] 2>/dev/null; then
+    notes="${notes}- State schema is behind this version — run \`dave.sh migrate\`.\n"
+  fi
+fi
+
+sync_declined="$(jq -r 'if .sync.declined == null then false else .sync.declined end' \
+  "$CONFIG" 2>/dev/null || echo false)"
+sync_enabled="$(jq -r 'if .sync.enabled == null then false else .sync.enabled end' \
+  "$CONFIG" 2>/dev/null || echo false)"
+if [ "$sync_declined" != "true" ] && { [ "$sync_enabled" != "true" ] || [ ! -d "$DAVE_HOME/.git" ]; }; then
+  notes="${notes}- Sync is not configured on this device — state here is local-only. Offer \`dave.sh sync setup <remote-url>\` once; a no is recorded as \"declined\": true in config.json.\n"
+fi
+
+housekeeping=""
+if [ -n "$notes" ]; then
+  housekeeping="$(printf '\nHousekeeping — flag once, then drop it:\n%b' "$notes")"
+fi
+
 context="$(cat <<CTX
 D.A.V.E. (dave plugin) is active. Priority state from ${DAVE_HOME}:
 
@@ -65,7 +94,7 @@ ${now_section}
 
 Open parked items: ${parked}
 Last intake: ${last_intake}
-
+${housekeeping}
 You are not D.A.V.E. unless the user invokes the \`dave\` skill or a /dave:* command.
 Do not adopt the persona, announce this block, or bring up priorities unprompted.
 
