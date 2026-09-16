@@ -895,10 +895,54 @@ test_git_probe() {
   assert_eq "git_probe with no upstream"    "0" "$(printf '%s' "$probe" | jq -r .ahead)"
 }
 
+# A bare remote on disk exercises the whole sync flow without a network: setup
+# on an empty remote pushes, a second home adopts, and brief pulls.
+test_sync() {
+  dave init >/dev/null
+  assert_contains "status before setup says so" "$(dave sync status)" "not configured"
+  assert_exit "push before setup fails" 1 dave sync push
+
+  # The remote must live outside DAVE_HOME — one inside would be staged into
+  # the state repo as an embedded git directory.
+  local remote_root; remote_root="$(mktemp -d "${TMPDIR:-/tmp}/dave-remote.XXXXXX")"
+  git init -q --bare "$remote_root/remote.git"
+
+  local out; out="$(dave sync setup "$remote_root/remote.git")"
+  assert_contains "setup against an empty remote initializes" "$out" "initialized"
+  assert_eq "setup flips enabled" "true" "$(jq -r .sync.enabled "$DAVE_HOME/config.json")"
+  assert_eq "setup records the remote" "$remote_root/remote.git" "$(jq -r .sync.remote "$DAVE_HOME/config.json")"
+  assert_eq "config.json is never tracked" "0" \
+    "$(git -C "$DAVE_HOME" ls-files | grep -c config.json || true)"
+
+  assert_contains "status is clean after setup" "$(dave sync status)" "behind: 0"
+  dave log "sync test entry" >/dev/null
+  assert_contains "push publishes" "$(dave sync push)" "pushed"
+  assert_contains "a clean push is a no-op" "$(dave sync push)" "nothing to push"
+
+  out="$(dave brief)"
+  assert_contains "brief leads with sync when enabled" "$out" "=== SYNC ==="
+  assert_contains "brief reports the pull" "$out" "sync: up to date"
+
+  # Second device: a fresh home adopts the remote wholesale and keeps its own
+  # config.json, which is the whole point of the feature.
+  local keep="$DAVE_HOME" home2
+  home2="$(mktemp -d "${TMPDIR:-/tmp}/dave-test2.XXXXXX")"
+  DAVE_HOME="$home2"
+  dave init >/dev/null
+  out="$(dave sync setup "$remote_root/remote.git")"
+  assert_contains "second device adopts remote state" "$out" "adopted remote state"
+  assert_contains "adopted state is the real one" "$(cat "$home2/log/$(date +%F).md")" "sync test entry"
+  assert_eq "device config survives adoption" "" "$(jq -r .user.name "$home2/config.json")"
+  assert_eq "adoption points at the same remote" "$remote_root/remote.git" \
+    "$(jq -r .sync.remote "$home2/config.json")"
+  rm -rf "$home2" "$remote_root"
+  DAVE_HOME="$keep"
+}
+
 test_help() {
   local out; out="$(dave help)"
   for c in init migrate brief focus drift park log standup mission intake project \
-           scan time next promise dossier review; do
+           scan time next promise dossier review sync; do
     assert_contains "help lists $c" "$out" "  $c"
   done
   assert_exit "an unknown command fails" 1 dave frobnicate
@@ -914,7 +958,7 @@ for t in init init_idempotent not_set_up_exits_3 migrate focus drift journal \
          drift_events next promise scan brief_phase_b \
          mission_ledger mission_legacy mission_pack dossier \
          review_empty review_cadence review_findings review_owed review_drift \
-         helpers git_probe help; do
+         helpers git_probe sync help; do
   run_test "$t"
 done
 

@@ -66,6 +66,14 @@ cmd_priorities() {
 cmd_brief() {
   require_init
   need_jq
+  # A synced tree only stays true if the session starts by pulling it. Bounded
+  # by gnet's timeouts: an offline machine degrades to local state, never a
+  # hung brief.
+  if sync_ready; then
+    echo "=== SYNC ==="
+    cmd_sync pull || echo "sync: using local state"
+    echo
+  fi
   echo "=== IDENTITY ==="
   jq -r '"user: \(.user.name // "unknown")\naddress_as: \(.user.address_as // "-")\nwork_hours: \(.user.work_hours // "-")"' "$CONFIG"
   echo
