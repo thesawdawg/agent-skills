@@ -2,7 +2,9 @@
 
 Date: 2026-09-16
 
-Status: implementation in progress. Baseline plan committed as `c5aee69`.
+Status: implemented through Phase 5; deferred items are listed under
+"Remaining / deferred" in the execution log. Baseline plan committed as
+`c5aee69`.
 
 > ## Review comments — Devin, 2026-09-16
 >
