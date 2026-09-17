@@ -1,30 +1,18 @@
 # Spec & Plan Playbook
 
 > Referenced from [SKILL.md](../SKILL.md). Question wording lives in
-> [question-bank.md](question-bank.md).
+> the supplied brief.
 
-Two phases that turn an agreed design into a written specification and an ordered
-plan of work.
-
-**This is not a new-project playbook.** Intent and stack selection belong to the
-[`ideator`](../../ideator/SKILL.md) → [`constructor`](../../constructor/SKILL.md) →
-[`datasecurer`](../../datasecurer/SKILL.md) chain, which produces a project brief,
-an architecture, dependency choices, and a security plan. This file picks up where
-that chain stops, because it does not produce a spec or a milestone plan.
-
-**Read the chain's artifacts before you start.** `ideator-output/project-brief.md`,
-`constructor-output/architecture-doc.md` and `constructor-output/dependencies.md`
-already contain most of what a spec needs. The user has answered these questions
-once; do not interview them again. Ask only about what the artifacts genuinely do
-not cover, and say which gap you are filling.
-
-If those artifacts do not exist, stop and say so — a spec written without an agreed
-brief and architecture is a guess, and the chain is cheap to run first.
+Use the agreed brief, architecture, and available security constraints. These may
+be user-provided or produced by other skills; no mandatory chain or output file
+is required. Ask only for missing decisions. Include spec and milestones in the
+primary architecture document by default, or use the separate paths below when
+requested. Historical `app-design-output` specs remain supported inputs.
 
 ## Phase 1 — Specify (write the spec)
 
 1. Read [`../templates/specifications-template.md`](../templates/specifications-template.md),
-   fill it in, and `write` it to `app-design-output/specifications.md`:
+   fill it in, and `write` it to `constructor-output/specifications.md`:
    - Problem statement & goals
    - Users / personas
    - Functional requirements (numbered, testable)
@@ -42,7 +30,7 @@ brief and architecture is a guess, and the chain is cheap to run first.
 ## Phase 2 — Plan (write the plan)
 
 1. Read [`../templates/development-plan.md`](../templates/development-plan.md),
-   fill it in, and `write` it to `app-design-output/development-plan.md`:
+   fill it in, and `write` it to `constructor-output/development-plan.md`:
    - **Milestones** — coherent, demoable increments.
    - **First vertical slice** — the thinnest end-to-end path that proves the
      architecture (one real feature wired UI → API → DB → deploy).

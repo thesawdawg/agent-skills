@@ -1,13 +1,13 @@
 ---
 name: dependabot-validator
-description: Validate a Dependabot PR's package updates against the current project to find compatibility issues before merging. Use when the user wants to check whether a Dependabot pull request is safe to merge, or when they want to understand the impact of a dependency upgrade.
+description: Validate dependency updates from Dependabot, Renovate, or manual changes against the current project to find compatibility issues before merging. Use when the user wants to check whether a Dependabot pull request is safe to merge, or when they want to understand the impact of a dependency upgrade.
 ---
 
 # Dependabot Validator Skill
 
 Analyzes a Dependabot PR's dependency changes against the current project to surface breaking changes, deprecated APIs, and compatibility issues before merging.
 
-See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, and the [top-level skills index](../USE_CASES.md) — use [pr-grill-me](../pr-grill-me/SKILL.md) instead for a general PR review that isn't specifically about dependency compatibility.
+See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, and the [top-level skills index](../USE_CASES.md) — use [pr-grill-me](../pr-grill-me/SKILL.md) instead when the author specifically wants an intent interview.
 
 Uses only the four core tools (**Read, Write, Edit, Bash**) plus `git` and `curl`. No harness-specific web-search or API tool is required — changelog lookups go through package-registry HTTP APIs via `curl`, which are deterministic and need no search engine.
 
@@ -22,7 +22,7 @@ git ls-remote origin HEAD
 
 ## Inputs
 
-- **PR number** (required). If the user didn't give one, ask: "What's the Dependabot PR number?"
+- **PR number** (required). If the user didn't give one, ask: "Which PR or base/head refs should I review?"
 - The command runs inside the target repo (current directory).
 
 ## Workflow
@@ -31,35 +31,16 @@ Work through these steps in order. If your harness has a task list, track each s
 
 ### 1. Fetch the PR and read what it changes
 
-Fetch the PR branch into a local temp branch. **Replace `<PR_NUMBER>` with the actual number everywhere it appears** (e.g. for PR 42: `pull/42/head:pr-42`):
-```bash
-git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
-```
+Resolve actual base/head refs from PR metadata (`gh pr view <N> --json
+baseRefName,baseRefOid,headRefOid`) or user-supplied refs for manual updates.
+Fetch those refs without overwriting local branches, verify their OIDs match the
+metadata, and compute `git merge-base <base-oid> <head-oid>`. Never use the current
+checkout as the assumed base. If history is insufficient, report inconclusive.
 
-Read the commit messages — Dependabot always names the package and versions there:
-```bash
-git log pr-<PR_NUMBER> --not HEAD --pretty=%B
-# e.g. "Bump lodash from 4.17.20 to 4.17.21"
-# or   "Bump actions/checkout from 3 to 4"
-```
-
-Parse every `Bump <package> from <X> to <Y>` line into a working list, one row per package:
-```
-{ package, ecosystem, from_version, to_version }
-```
-
-Diff the manifests and lockfiles between your branch and the PR branch to confirm exactly what changed:
-```bash
-git diff HEAD..pr-<PR_NUMBER> -- \
-  package.json package-lock.json \
-  requirements.txt Pipfile.lock \
-  Cargo.toml Cargo.lock \
-  go.mod go.sum \
-  pom.xml build.gradle \
-  Gemfile.lock composer.lock
-```
-
-**Do not delete the temp branch yet** — later steps compare against it. You'll remove it in Step 8.
+Read manifests and lockfiles at the merge-base and head. Derive each package's
+ecosystem and before/after version from those files; commit messages are hints,
+not the source of truth. Record exact OIDs and the comparison list. No bot author
+or `Bump ...` message is required.
 
 ### 2. Detect the project ecosystem
 
@@ -160,26 +141,19 @@ For each package, compare what the project uses (Step 3) against what changed (S
 - **Review needed** — the update touches an API the project uses; a manual check or small code change may be required.
 - **Breaking** — the update removes or renames something the project calls; code changes are mandatory before merging.
 
-### 6. Run the test suite against the PR's dependency state (regression check)
+### 6. Compare reproducible baseline and updated tests
 
-⚠️ **Tests must run with the *updated* dependencies, not your current checkout.** Running `npm test` in the current working tree tests your *existing* deps and can produce a false MERGE SAFE without ever exercising the update. Use an isolated **git worktree** checked out to the PR branch, install the updated deps there, and run tests there.
+Create two detached worktrees in a fresh run directory using the reviewed base
+and head OIDs. Never change the user's checkout. Install from each lockfile and
+run the same relevant test commands with matching environment versions. Python
+runs need separate virtual environments; do not install into the user's environment.
+Capture full logs and actual exit codes (use `set -o pipefail` if piping to `tee`).
 
-Create the worktree (replace `<PR_NUMBER>`):
-```bash
-git worktree add ./.dependabot-validator/pr-<PR_NUMBER> pr-<PR_NUMBER>
-```
-
-Install the updated deps and run tests **inside** the worktree. Each command uses a subshell `( cd … && … )` so it works even if your harness runs each Bash call in a fresh shell (the `cd` doesn't need to persist):
-```bash
-( cd ./.dependabot-validator/pr-<PR_NUMBER> && npm ci && npm test ) 2>&1 | tail -60                       # npm
-( cd ./.dependabot-validator/pr-<PR_NUMBER> && pip install -r requirements.txt && pytest --tb=short -q ) 2>&1 | tail -60   # Python
-( cd ./.dependabot-validator/pr-<PR_NUMBER> && cargo test ) 2>&1 | tail -60                               # Rust
-( cd ./.dependabot-validator/pr-<PR_NUMBER> && go test ./... ) 2>&1 | tail -60                            # Go
-( cd ./.dependabot-validator/pr-<PR_NUMBER> && mvn test -q ) 2>&1 | tail -60                              # Java (Maven)
-```
-(For Python, prefer a throwaway venv inside the worktree if the project uses one, so you don't mutate the ambient environment.)
-
-If tests genuinely can't run (missing environment, secrets, database), say so **explicitly** in the report and rely on the static analysis from Steps 3–5 — **do not report MERGE SAFE on the basis of tests you didn't actually run against the update.**
+Compare outcomes: a failure present on both revisions is not automatically caused
+by the update. Verify the resolved package versions, not just successful install
+commands. If prerequisites, credentials, or tests are unavailable, the result is
+**INCONCLUSIVE**, with static findings and the untested behavior named. Do not
+claim merge safety from a skipped or unrepresentative test run.
 
 ### 7. Check for peer / transitive dependency conflicts
 
@@ -191,18 +165,10 @@ cargo check 2>&1 | head -30                                  # Rust
 
 ### 8. Clean up
 
-Remove the worktree from Step 6 **first** (git won't delete a branch that's checked out in a worktree), then the temp branch:
-```bash
-git worktree remove ./.dependabot-validator/pr-<PR_NUMBER> --force
-git branch -D pr-<PR_NUMBER>
-```
-(If Step 6 was skipped, only the `git branch -D` line is needed.)
+Remove only the worktrees created by this run, using `git worktree remove` without
+`--force`. If generated or modified files prevent removal, report and retain the
+worktree for review. No local PR branch needs deletion.
 
-### 9. Write the report
-
-Produce this report for the user:
-
----
 
 ## Dependabot PR Validation Report
 

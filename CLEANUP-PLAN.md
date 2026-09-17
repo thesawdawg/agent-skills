@@ -516,3 +516,23 @@ Repository evidence is linked throughout. External documentation was checked on 
 - Expected intermediate discovery is **21**, not the review's 20: 16 baseline
   plus all five moved entries. Final is 19 with three merges, retained Flask,
   and the new review entry point. Counts are derived from the actual catalog.
+
+### Phase 3 workflow ownership
+
+- Merged persona UX into dogfood and staged execution into D.A.V.E.; carried their
+  notices into the destination bundles. Merged coding-style into workflow-rules
+  references. Superseded source entries are removed; installed copies are untouched.
+- Constructor owns spec/milestone templates. Ideator, constructor, and app-design
+  now reuse supplied answers and use proportionate artifacts. Assessment-only
+  mode does not automatically launch runtime QA. Memory defers to configured memory.
+- Seven canonical D.A.V.E. roles; legacy role names resolve at lookup, preserving
+  mission history. Code-review now owns the extracted Critic review method.
+  D.A.V.E.'s critic explicitly requires that installed package for actual reviews;
+  mission packing and other roles remain standalone.
+- Pi adapter now configures optional prompts against an already installed skill,
+  never transforms/copies a second skill. Selftest verifies a path with spaces,
+  idempotence, unchanged SKILL.md, and installed mission packing via a legacy alias.
+- Dependency review now accepts manual/Renovate changes, compares actual base/head
+  manifests, and requires reproducible before/after tests or an inconclusive result.
+- Documentation link/catalog consolidation follows in Phase 4; links to merged
+  chooser material are not yet considered final validation results.

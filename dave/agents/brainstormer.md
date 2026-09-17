@@ -5,6 +5,6 @@ model: sonnet
 color: purple
 ---
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/dave/references/roles/brainstormer.md` first.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/dave/references/roles/options.md` first.
 Follow that canonical role contract and its return format. If the file is
 unavailable, stop and report the missing D.A.V.E. bundle.

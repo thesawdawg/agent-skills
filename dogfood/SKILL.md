@@ -1,6 +1,6 @@
 ---
 name: dogfood
-description: Run systematic, evidence-backed exploratory QA on a live web app — navigate its pages, exercise interactive elements, capture console errors and screenshots, then produce a categorized bug report. Use when the user wants to find bugs in a web application before shipping, wants a QA pass on a deployed app or PR preview, or asks to "dogfood" a URL.
+description: Run systematic, evidence-backed exploratory QA on a live web app — navigate its pages, exercise interactive elements, capture console errors and screenshots, then produce a categorized bug report. Use when the user wants to find bugs in a web application before shipping, wants a QA pass on a deployed app or PR preview, asks to "dogfood" a URL, or requests a persona-based UX friction assessment.
 ---
 
 # Dogfood Skill
@@ -197,3 +197,6 @@ All commands take `--state-dir ./dogfood-output/.browser` — the same directory
 - **Test navigation flows end-to-end.**
 - **Edge cases:** empty states, very long text, special characters, rapid clicking.
 - **Always run `close` when done** — it's the only thing that stops the background browser process.
+
+For requested persona/UX exploration, use [persona UX](references/persona-ux.md)
+within the same run and evidence stream.

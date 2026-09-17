@@ -5,6 +5,6 @@ model: sonnet
 color: cyan
 ---
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/dave/references/roles/module-finder.md` first.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/dave/references/roles/scout.md` first.
 Follow that canonical role contract and its return format. If the file is
 unavailable, stop and report the missing D.A.V.E. bundle.

@@ -1,28 +1,28 @@
 ---
 name: commit-documentor
-description: After committing, check whether the change needs documentation, draft the doc updates for approval, and on approval publish them — to a separate documentation repository (branch + PR by default), or to a docs tree in this repo for projects that have no separate docs repo. Uses a committed config for the doc location, a committed doc index to keep queries cheap and in sync, and user-defined rules for what does and does not warrant a doc update. Use when the user runs commit-documentor, or asks to document, sync, or check docs for their recent commits.
+description: After committing, check whether the change needs documentation, draft the doc updates for approval, and on approval commit them locally — in a separate documentation repository, or to a docs tree in this repo for projects that have no separate docs repo. Uses a committed config for the doc location, an optional doc index to keep queries cheap and in sync, and user-defined rules for what does and does not warrant a doc update. Use when the user runs commit-documentor, or asks to document, sync, or check docs for their recent commits.
 ---
 
 # Commit Documentor
 
 Reviews the commits the user just made, decides whether they change anything the
 documentation claims to describe, drafts the doc edits, and — only after the user
-approves — publishes them.
+approves — commits the approved files locally.
 
 See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example,
 [references/rules.md](references/rules.md) for how the applicability rules are
 evaluated, and the [top-level skills index](../USE_CASES.md).
 
-**Every write here is outward-facing** — a push to a separate docs repository, or a
-commit to the user's own branch. Never commit or push without an explicit approval
-in this conversation for the specific diff you are about to publish.
+Draft within the requested scope before seeking approval. Commit only reviewed
+files when the user has authorized that action. Never push; prepare publication
+instructions for the user. Preserve existing authorization across turns.
 
 ## Two modes
 
 Set by `mode` in the config, chosen once during first-run setup:
 
 - **`repo`** (default) — docs live in a **separate repository**. Publishing means
-  branch → commit → push → PR against that repo.
+  local branch → scoped commit. The user handles push/PR publication.
 - **`local`** — the project has no separate docs repo, so this skill creates and
   maintains docs **inside this repo** under `local_docs.docs_root`. Publishing means
   a commit on the current branch, scoped to the docs paths only. **It never pushes**
@@ -35,12 +35,11 @@ run `scripts/doc-repo.sh mode` if you need to know which one is active.
 ## First run: setup
 
 If `scripts/doc-repo.sh config` exits 3, nothing is configured yet. Do the whole
-setup **before** touching any commits, and **write the config file exactly once**
-at the end of it — do not create a partial config and amend it.
+setup from existing project instructions and user answers. Reading commits and
+drafting a proposed configuration can proceed before missing details are resolved.
 
 **Do not guess a documentation location.** Ask the user in one grouped question
-(a single `AskUserQuestion` with multiple questions, not a sequence of separate
-turns):
+(an available question tool or chat):
 
 1. **Where do the docs live?** Options: a separate docs repo (ask for the local
    clone path, the remote URL, the base branch, and the docs root within it) —
@@ -64,17 +63,17 @@ Then write `.agents/commit-documentor.json` from
 block for the chosen mode (`doc_repo` or `local_docs`) and dropping every
 `_comment_*` key. Show it to the user and offer to commit it to the project repo.
 
-Requires `jq`. `gh` is only needed for the PR step in `repo` mode.
+Requires git, jq, and realpath. No remote publication is performed.
 
-## Prerequisite: the doc index
+## Optional index for larger documentation trees
 
 The index lives in the project repo at the config's `doc_index` path (default
 `.agents/commit-documentor/doc-index.md`) and is **committed** — it is the local,
 reviewable map of code area → doc page, and it is what keeps doc querying cheap
 and in sync.
 
-If the index is missing, or its recorded doc SHA is behind the current one, run the
-scan before anything else:
+For a small tree, use scoped search directly and skip index setup. If an index
+is used and missing or stale, refresh it:
 
 ```bash
 scripts/doc-repo.sh sync     # repo mode: clone or fast-forward. local mode: no-op
@@ -118,7 +117,7 @@ Track each step as a task.
 
 ### 0. Check preconditions — before reading any commits
 
-Do not start reviewing commits until both of these pass:
+Do not start reviewing commits until the applicable checks pass:
 
 ```bash
 scripts/doc-repo.sh config >/dev/null   # exit 3 → run "First run: setup" above
