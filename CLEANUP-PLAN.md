@@ -493,3 +493,17 @@ Repository evidence is linked throughout. External documentation was checked on 
   document. Both local/repo modes now pass approved-file isolation tests and
   retain unrelated staged files. Broad revert refuses execution; publication
   helper creates local commits only. Dogfood refuses existing findings files.
+
+- Browser decision: retain the existing shared driver for the shell-only + axe
+  contract; allow capable native tools without adding a second bundled backend.
+  Reviewed maintained alternatives: https://github.com/microsoft/playwright-mcp
+  and https://github.com/vercel-labs/agent-browser. Snapshot uses documented
+  `locator.ariaSnapshot()` (https://playwright.dev/docs/api/class-locator#locator-aria-snapshot).
+- Browser regression reproduced the removed snapshot API under Playwright 1.61.1.
+  Runtime packages and matching Chromium were installed only under `/tmp`;
+  Chromium requires execution outside this workspace's process sandbox.
+- Browser setup now prepares a lockfile-keyed writable cache. Driver gains
+  viewport control, exclusive launch ownership, graceful signal cleanup, and
+  invalidated element references after actions/navigation.
+- PR interview now resolves verified base/head OIDs and merge-base; it neither
+  compares against arbitrary HEAD nor deletes a potentially user-owned branch.
