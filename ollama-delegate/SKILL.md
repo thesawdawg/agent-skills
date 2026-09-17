@@ -7,7 +7,6 @@ description: Offload a task to a local or remote Ollama model as an external sub
 
 Runs tasks through the Ollama HTTP API (`/api/generate` for one-shot, `/api/chat` for multi-turn) rather than shelling out interactively. Works against `http://localhost:11434` (the default local Ollama daemon) or any other reachable Ollama-compatible API base URL the user gives you — including an external/remote Ollama instance.
 
-See also: [README.md](README.md) for the API mechanics behind this design, [USE_CASES.md](USE_CASES.md) for trigger phrases and worked examples, and the [top-level skills index](../USE_CASES.md) for how this fits alongside `codex-delegate`.
 
 ## When to use this
 
@@ -83,3 +82,7 @@ rm -f <state-file>
 ```
 
 The Ollama daemon itself keeps no server-side session — deleting the state file just forgets the message history on Claude's side.
+
+Use one writer per state file. `start` refuses existing state; malformed provider
+responses fail without changing conversation state. HTTP requests are bounded
+by connection and overall timeouts. Validate semantic output before using it.
