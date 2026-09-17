@@ -49,6 +49,7 @@ assert_exit() {
 
 run_test() {
   local name="$1"
+  if [ "${DAVE_TEST_SKIP_SYNC:-0}" = 1 ] && [ "$name" = sync ]; then return 0; fi
   [ -z "$FILTER" ] || case "$name" in *"$FILTER"*) ;; *) return 0 ;; esac
   printf '%s\n' "$name"
   new_home

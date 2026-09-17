@@ -22,7 +22,7 @@ cmd_parked() {
 cmd_log() {
   require_init
   [ $# -ge 1 ] || die "usage: log <text>"
-  local f="$LOGDIR/$(today).md"
+  local f; f="$LOGDIR/$(today).md"
   [ -f "$f" ] || printf '# %s\n\n' "$(date '+%A, %B %-d, %Y')" > "$f"
   local ref
   ref="$(jq -r '.focus.ref // empty' "$STATE" 2>/dev/null || true)"
@@ -36,7 +36,7 @@ cmd_log() {
 
 cmd_today() {
   require_init
-  local f="$LOGDIR/$(today).md"
+  local f; f="$LOGDIR/$(today).md"
   [ -f "$f" ] && cat "$f" || echo "(nothing logged today)"
 }
 
@@ -62,7 +62,7 @@ cmd_intake() {
   require_init
   need_jq
   local source_name="${1:-board}"
-  local path="$INTAKE/$(today)-$(slugify "$source_name").md"
+  local path; path="$INTAKE/$(today)-$(slugify "$source_name").md"
   cat > "$path"
   json_edit "$STATE" --arg ts "$(now_iso)" --arg src "$source_name" \
     '.last_intake = ($ts + " (" + $src + ")")'
