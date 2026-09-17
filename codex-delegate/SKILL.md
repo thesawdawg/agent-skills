@@ -7,7 +7,6 @@ description: Delegate a medium-to-high importance implementation, refactor, debu
 
 Runs the `codex` CLI (user is already authenticated) as a single, sequential external subagent. One Codex conversation thread is opened per task and resumed for every follow-up step — never more than one Codex process running at a time, and never more than one thread per task.
 
-See also: [README.md](README.md) for the underlying CLI mechanics and the policy check behind this design, [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, and the [top-level skills index](../USE_CASES.md) for how this skill fits alongside the others.
 
 ## When to use this
 
@@ -18,6 +17,10 @@ See also: [README.md](README.md) for the underlying CLI mechanics and the policy
 **Don't parallelize it.** This skill is explicitly sequential: one Codex session, one turn at a time. If you have several genuinely independent tasks, either run them through this skill one after another, or use Claude's own `Agent` tool for concurrent work — don't run multiple `codex exec` processes against the same thread or the same working tree at once.
 
 ## Prerequisites
+
+The helper requires jq and a writable per-session state path. Existing state is
+never overwritten by `start`; resume it with `send`. Calls must be sequential.
+
 
 The user is pre-authenticated. Confirm once per session if you haven't already:
 

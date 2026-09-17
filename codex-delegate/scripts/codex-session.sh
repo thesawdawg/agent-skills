@@ -13,6 +13,10 @@
 # processes at once — each call is a single blocking turn in one thread.
 
 set -euo pipefail
+umask 077
+command -v jq >/dev/null || { echo 'jq is required' >&2; exit 3; }
+log=""; last=""
+trap '[ -z "$log" ] || rm -f "$log"; [ -z "$last" ] || rm -f "$last"' EXIT
 
 cmd="${1:-}"
 [ -n "$cmd" ] || { echo "usage: codex-session.sh {start|send|id} ..." >&2; exit 2; }
@@ -32,9 +36,11 @@ run_codex() {
 case "$cmd" in
   start)
     state_file="${1:?state-file required}"; sandbox="${2:?sandbox required}"; prompt="${3:?prompt required}"
+    [ ! -e "$state_file" ] || { echo 'state already exists; use send or a new state path' >&2; exit 2; }
+    case "$sandbox" in read-only|workspace-write|danger-full-access) ;; *) echo 'invalid sandbox' >&2; exit 2 ;; esac
     log=$(mktemp); last=$(mktemp)
     run_codex "$log" "$last" exec "$prompt" -s "$sandbox"
-    thread_id=$(grep -m1 '"type":"thread.started"' "$log" | grep -oE '"thread_id":"[^"]+"' | cut -d'"' -f4 || true)
+    thread_id=$(jq -rs '[.[] | select(.type == "thread.started") | .thread_id | select(type == "string" and length > 0)][0] // empty' "$log")
     if [ -z "$thread_id" ]; then
       echo "could not find thread_id in codex output:" >&2
       cat "$log" >&2
