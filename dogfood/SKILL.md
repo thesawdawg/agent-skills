@@ -62,7 +62,8 @@ Five phases. If your harness has a task/todo list, track each phase on it.
 1. Create the output layout:
    ```bash
    mkdir -p ./dogfood-output/screenshots ./dogfood-output/.browser
-   : > ./dogfood-output/issues.jsonl        # findings file: one JSON object per line
+   ( set -o noclobber; : > ./dogfood-output/issues.jsonl ) || exit 1
+   # If it exists, explicitly resume or choose a new output directory.
    ```
    Layout: `./dogfood-output/screenshots/` (evidence), `issues.jsonl` (findings, append as you go), `report.md` (written in Phase 5).
 2. Confirm the testing scope (from Inputs).
