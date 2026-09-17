@@ -507,3 +507,12 @@ Repository evidence is linked throughout. External documentation was checked on 
   invalidated element references after actions/navigation.
 - PR interview now resolves verified base/head OIDs and merge-base; it neither
   compares against arbitrary HEAD nor deletes a potentially user-owned branch.
+
+### Phase 2 distribution
+
+- Flattened all five Pi skill directories without changing their frontmatter names.
+  D.A.V.E. stays at `dave/skills/dave`. Bundled MIT notices preserve upstream
+  attribution in selected installs, including individual credits and GSD references.
+- Expected intermediate discovery is **21**, not the review's 20: 16 baseline
+  plus all five moved entries. Final is 19 with three merges, retained Flask,
+  and the new review entry point. Counts are derived from the actual catalog.

@@ -69,7 +69,7 @@ Use the `Bash` tool for every step. Always pin the version (`wrangler@latest` or
 3. **Parse the URLs** from that output. Run the bundled helper instead of eyeballing. It lives in **this skill's own directory** — find that once (do not use `git rev-parse`; you run this skill from inside the user's Worker project, where it would return the wrong root). On stock pi, shell variables don't persist between Bash calls, so **set `PARSER` at the top of each block that uses it**:
    ```bash
    # Find this skill's parser once; note the absolute path it prints:
-   for d in "$HOME/.pi/agent/skills/cloudflare-temporary-deploy" "$HOME/.agents/skills/cloudflare-temporary-deploy" ".pi/skills/cloudflare-temporary-deploy" ".agents/skills/cloudflare-temporary-deploy" ./pi-skills/cloudflare-temporary-deploy ./cloudflare-temporary-deploy; do
+   for d in "$HOME/.pi/agent/skills/cloudflare-temporary-deploy" "$HOME/.agents/skills/cloudflare-temporary-deploy" ".pi/skills/cloudflare-temporary-deploy" ".agents/skills/cloudflare-temporary-deploy" ./cloudflare-temporary-deploy ./cloudflare-temporary-deploy; do
      [ -f "$d/scripts/parse_deploy_output.py" ] && printf 'PARSER=%s/scripts/parse_deploy_output.py\n' "$(cd "$d" && pwd)" && break
    done
    ```

@@ -68,7 +68,7 @@ Reads the brief and the architecture, then produces the threat model, security p
 
 > Threat model this before we build it, and tell me what happens when the database host dies.
 
-Not a penetration test of a running system — that's [`web-pentest`](pi-skills/web-pentest/SKILL.md). See [`datasecurer/USE_CASES.md`](datasecurer/USE_CASES.md).
+Not a penetration test of a running system — that's [`web-pentest`](web-pentest/SKILL.md). See [`datasecurer/USE_CASES.md`](datasecurer/USE_CASES.md).
 
 ---
 

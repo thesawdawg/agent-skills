@@ -18,7 +18,7 @@ Good uses:
 - Reviewing an architecture for security and reliability gaps
 - Answering "what happens when this component dies?"
 
-Do not use it as a penetration test of a running system — that's [`web-pentest`](../pi-skills/web-pentest/SKILL.md), which needs authorization and a live target. Do not use it to fix vulnerabilities in existing code. Do not run it before there's an architecture to review; without one it can only produce generalities.
+Do not use it as a penetration test of a running system — that's [`web-pentest`](../web-pentest/SKILL.md), which needs authorization and a live target. Do not use it to fix vulnerabilities in existing code. Do not run it before there's an architecture to review; without one it can only produce generalities.
 
 ## User examples
 
