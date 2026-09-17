@@ -15,11 +15,10 @@
 
 MISSION_VERDICTS="trust partial rerun discard"
 
-# Agent definitions live in the plugin; a harness that installs them elsewhere can
-# say so rather than losing the return-format contract.
+# Role contracts are bundled with the skill; hosts may explicitly override them.
 _agents_dir() {
   if [ -n "${DAVE_AGENTS_DIR:-}" ]; then printf '%s\n' "$DAVE_AGENTS_DIR"; return 0; fi
-  printf '%s\n' "$PLUGIN_ROOT/agents"
+  printf '%s\n' "$SCRIPT_DIR/../references/roles"
 }
 
 _mission_path() { printf '%s/%s.md\n' "$MISSIONS" "$1"; }

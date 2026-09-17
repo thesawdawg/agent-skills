@@ -7,7 +7,10 @@
 #   ./test/run.sh            # run everything
 #   ./test/run.sh focus      # run tests whose name matches a pattern
 
-set -uo pipefail
+set -Euo pipefail
+ERROR_LOG=$(mktemp)
+trap 'rm -f "$ERROR_LOG"' EXIT
+trap 'printf "unexpected failure at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >> "$ERROR_LOG"' ERR
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DAVE="$TEST_DIR/../dave.sh"
@@ -573,7 +576,7 @@ test_mission_ledger() {
 test_mission_legacy() {
   dave init >/dev/null
   # A brief written before missions.json existed must not read as broken.
-  sed -e 's|{{SLUG}}|old-thing|g' -e "s|{{DATE}}|$(today)|g" \
+  sed -e 's|{{SLUG}}|old-thing|g' -e "s|{{DATE}}|$(date +%F)|g" \
     "$TEST_DIR/../../templates/mission-brief-template.md" > "$DAVE_HOME/missions/old-thing.md"
   assert_contains "list finds an unregistered brief" "$(dave mission list)" "old-thing"
   local id; id="$(dave mission assign old-thing scout "have a look")"
@@ -968,3 +971,5 @@ if [ "$FAIL" -gt 0 ]; then
   printf 'failed tests:\n'; printf '  - %s\n' "${FAILED_NAMES[@]}"
   exit 1
 fi
+
+if [ -s "$ERROR_LOG" ]; then cat "$ERROR_LOG" >&2; exit 1; fi

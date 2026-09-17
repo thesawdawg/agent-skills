@@ -183,7 +183,7 @@ do_install() {
 
   # 2. agents -> role references
   local n=0
-  for a in "$SRC"/agents/*.md; do
+  for a in "$SRC"/skills/dave/references/roles/*.md; do
     [ -f "$a" ] || continue
     local base; base="$(basename "$a")"
     if [ "$DRY" -eq 1 ]; then echo "  [dry-run] agent $base -> $ROLES_DST/$base"

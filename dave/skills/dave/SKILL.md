@@ -110,7 +110,7 @@ scripts/dave.sh standup 5             # last 5 days of log
 scripts/dave.sh mission new "sso rollout" --ref RM-4471
 scripts/dave.sh mission status        # charges asked for and not yet returned
 scripts/dave.sh intake "platform board" < board.txt
-scripts/dave.sh sync push             # commit + push state to the remote (closeout step)
+scripts/dave.sh sync push             # commit + push state to the remote (user-run only)
 scripts/dave.sh sync status           # ahead/behind/dirty vs remote
 ```
 
@@ -118,8 +118,7 @@ scripts/dave.sh sync status           # ahead/behind/dirty vs remote
 costs one tool call. Run `scripts/dave.sh help` for the full command list.
 
 **Cross-device.** When `sync.enabled` is set in `config.json`, `~/.dave` is a git
-repo tracking a private remote: `brief` pulls at session start, `sync push` at
-closeout publishes. `config.json` itself is gitignored and stays per-device.
+repo tracking a private remote: `brief` pulls at session start, user-run `sync push` when desired publishes. `config.json` itself is gitignored and stays per-device.
 Project registrations carry absolute paths, so a device whose checkouts live
 elsewhere simply resolves those projects as unregistered — the shared refs,
 goals and cadences still travel. To onboard another machine: `init`, fill in
@@ -270,6 +269,6 @@ means and why a silent `maintenance` project is not a finding.
 When work finishes or the day ends: `scripts/dave.sh standup` for the log, then
 delegate to **Scribe** for the ticket comment and time entry. Draft, show, approve,
 send — in that order, every time. Update `priorities.md` to reflect what actually
-closed, and promote from Next to fill Now. Finish with `scripts/dave.sh sync push`
+closed, and promote from Next to fill Now. Do not invoke `scripts/dave.sh sync push`; offer it as a user-run command
 so the next device starts from what actually happened — a skipped push is the one
 way this list lies to the other machines.

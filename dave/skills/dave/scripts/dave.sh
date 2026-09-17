@@ -107,7 +107,7 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
  sync
   sync setup <remote-url>   make ~/.dave a git repo tracking a private remote
   sync pull                 rebase local state onto remote (runs inside brief)
-  sync push                 commit + push state (run at session closeout)
+  sync push                 commit + push state (user-run only)
   sync status               ahead/behind/dirty vs remote
 
 Exit codes: 3 = not set up (run init) · 4 = state schema is behind (run migrate)

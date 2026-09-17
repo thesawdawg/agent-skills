@@ -2,7 +2,7 @@
 
 Date: 2026-09-16
 
-Status: proposed implementation plan. The assessment was approved; the changes below have not been implemented.
+Status: implementation in progress. Baseline plan committed as `c5aee69`.
 
 > ## Review comments — Devin, 2026-09-16
 >
@@ -467,3 +467,29 @@ Repository evidence is linked throughout. External documentation was checked on 
 - [Playwright release notes](https://playwright.dev/docs/release-notes): removal of `page.accessibility` in version 1.57.
 
 **Bottom line:** unify distribution, make installed bundles trustworthy, and reduce duplicate process before broadening the catalog. Preserve domain-specific evidence and safeguards; remove the bureaucracy around them.
+
+## Execution log — 2026-09-16
+
+- User approved Devin's flat-root revision: keep root skills and
+  `dave/skills/dave`; flatten the five Pi entries before merging three entries.
+- Baseline: locally cached `skills@1.6.0`, `skills add . --list` discovers
+  16 names, matching Devin's remote-source result. Test local source because
+  unpublished cleanup cannot be validated by querying remote HEAD.
+- Preserve `app-design` and `dependabot-validator` public names; narrow/extend
+  descriptions rather than introduce additional installed-name migrations.
+- Keep Flask guidance here pending an identified owning project. No installed
+  entries, personal rules, or D.A.V.E. state will be removed or migrated.
+- Retain this plan as the requested execution/change record; retire the already
+  completed D.A.V.E. implementation plan after preserving durable guidance.
+- D.A.V.E. isolated-copy regression reproduced missing `/tmp/agents/critic.md`.
+- Git metadata is read-only in the workspace; authorized commits use the
+  escalation mechanism. No push will be performed.
+
+- Phase 1: bundled nine role contracts and thin plugin wrappers; isolated copy
+  and symlink mission-pack checks pass; 46 mission assertions pass without the
+  missing `today` fixture error. Test runner captures unexpected ERR events,
+  including subshell failures, and fails the suite.
+- Docs regression failed before repair by committing an unrelated untracked
+  document. Both local/repo modes now pass approved-file isolation tests and
+  retain unrelated staged files. Broad revert refuses execution; publication
+  helper creates local commits only. Dogfood refuses existing findings files.
