@@ -1,6 +1,5 @@
 ---
 description: "Turn what you actually did into a standup, ticket comment, or time entry"
-argument-hint: "[days back, default 1] [optional: 'ticket' or 'commit']"
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "Task", "AskUserQuestion"]
 ---
 

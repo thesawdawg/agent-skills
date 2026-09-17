@@ -1,0 +1,12 @@
+[
+  {"prompt":"Review this local diff for bugs, no interview.","expected":["code-review"],"avoid":["pr-grill-me","dave"]},
+  {"prompt":"Grill me about what my PR does.","expected":["pr-grill-me"],"avoid":["code-review"]},
+  {"prompt":"Check this Renovate dependency update for compatibility.","expected":["dependabot-validator"],"avoid":["pr-grill-me"]},
+  {"prompt":"Assess this script repository and propose fixes; do not run it.","expected":["app-design"],"avoid":["dogfood","web-pentest"]},
+  {"prompt":"Use D.A.V.E. to execute this approved plan without priority setup.","expected":["dave"],"avoid":["ideator"]},
+  {"prompt":"Find UX friction for a new keyboard-only user on this preview.","expected":["dogfood"],"avoid":["web-pentest"]},
+  {"prompt":"Audit this app against WCAG 2.2 AA.","expected":["accessibility-audit"],"avoid":["web-pentest"]},
+  {"prompt":"Turn this approved architecture into specifications and milestones.","expected":["constructor"],"avoid":["app-design","ideator"]},
+  {"prompt":"What is 7 times 8?","expected":[],"avoid":["dave","workflow-rules"]},
+  {"prompt":"Add a test to this unrelated Django application.","expected":[],"avoid":["flask-tests"]}
+]

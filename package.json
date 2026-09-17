@@ -1,0 +1,6 @@
+{
+  "name": "agent-skills-validation",
+  "private": true,
+  "scripts": { "test": "bash scripts/verify.sh" },
+  "devDependencies": { "skills": "1.6.0" }
+}

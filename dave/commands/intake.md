@@ -1,6 +1,5 @@
 ---
 description: "Feed D.A.V.E. a kanban board or pull Redmine, then reconcile into one ranked list"
-argument-hint: "[board name or 'redmine']"
 allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "Task", "AskUserQuestion"]
 ---
 

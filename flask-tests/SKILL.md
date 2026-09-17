@@ -1,6 +1,6 @@
 ---
 name: flask-tests
-description: Write and run tests for this Flask app using the established two-tier pytest framework (fast SQLite unit tests + MySQL integration tests). Use when adding tests for a controller/model/worker/route, scaffolding tests for a new module, or asked how to test something here. Assumes Flask; confirm framework decisions with the user before scaffolding anything new.
+description: Deprecated outside its original application; verify the exact fixtures and database layout match before use. Write and run tests for this Flask app using the established two-tier pytest framework (fast SQLite unit tests + MySQL integration tests). Use when adding tests for a controller/model/worker/route, scaffolding tests for a new module, or asked how to test something here. Assumes Flask; confirm framework decisions with the user before scaffolding anything new.
 ---
 
 # Flask App Testing

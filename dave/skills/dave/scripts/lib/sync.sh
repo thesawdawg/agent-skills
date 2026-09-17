@@ -6,7 +6,7 @@
 # config.json is gitignored, so device-local settings (and any future secrets)
 # never leave the machine. Everything else — priorities, log, missions, projects,
 # ledgers — is shared state. Pull runs at the top of `brief`; push is
-# `dave.sh sync push` at closeout. Every network op goes through gnet(), which
+# `dave.sh sync push` only when run by the user. Every network op goes through gnet(), which
 # bounds connect and transfer time: an offline machine degrades to "use local
 # state" instead of hanging the session start.
 #

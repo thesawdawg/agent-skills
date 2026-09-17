@@ -68,7 +68,7 @@
     "session_start": true
   },
 
-  "_comment_sync": "Cross-device persistence: ~/.dave is a git repo; config.json is gitignored so these settings stay per-device. `dave.sh sync setup <remote-url>` fills remote/branch and flips enabled. Pull runs at the top of `brief`; push is `dave.sh sync push` at closeout.",
+  "_comment_sync": "Cross-device persistence: ~/.dave is a git repo; config.json is gitignored so these settings stay per-device. `dave.sh sync setup <remote-url>` fills remote/branch and flips enabled. Pull runs at the top of `brief`; push is user-run only; agents never invoke it.",
   "sync": {
     "enabled": false,
     "remote": "",

@@ -88,19 +88,32 @@ async function runLaunch() {
   });
   const context = await browser.newContext();
   const page = await context.newPage();
+  page.on('framenavigated', () => fs.rmSync(refsFile, { force: true }));
   const log = (line) => fs.appendFileSync(consoleLog, `${line}\n`);
   page.on('console', (msg) => log(`[console.${msg.type()}] ${msg.text()}`));
   page.on('pageerror', (err) => log(`[pageerror] ${err.message}`));
   page.on('requestfailed', (req) => log(`[requestfailed] ${req.url()} ${req.failure()?.errorText || ''}`));
 
   async function handle(command, cargs) {
+    if (['click', 'type', 'press', 'back', 'navigate', 'viewport'].includes(command)) {
+      fs.rmSync(refsFile, { force: true });
+    }
     switch (command) {
+      case 'viewport': {
+        const width = Number(cargs.width);
+        const height = Number(cargs.height);
+        if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+          throw new Error('Viewport requires positive integer width and height');
+        }
+        await page.setViewportSize({ width, height });
+        return { width, height };
+      }
       case 'navigate': {
         await page.goto(cargs.url, { waitUntil: 'load', timeout: 30000 });
         return { url: page.url(), title: await page.title() };
       }
       case 'snapshot': {
-        return await page.accessibility.snapshot({ interestingOnly: true });
+        return await page.locator('body').ariaSnapshot();
       }
       case 'screenshot': {
         const file = cargs.path || path.join(stateDir, `shot-${Date.now()}.png`);
@@ -109,21 +122,6 @@ async function runLaunch() {
       }
       case 'annotate': {
         const refs = await page.evaluate(() => {
-          const selectorFor = (el) => {
-            if (el.id) return `#${CSS.escape(el.id)}`;
-            const segments = [];
-            let node = el;
-            while (node && node.nodeType === 1 && segments.length < 6) {
-              let sel = node.tagName.toLowerCase();
-              const siblings = node.parentElement
-                ? Array.from(node.parentElement.children).filter((c) => c.tagName === node.tagName)
-                : [];
-              if (siblings.length > 1) sel += `:nth-of-type(${siblings.indexOf(node) + 1})`;
-              segments.unshift(sel);
-              node = node.parentElement;
-            }
-            return segments.join(' > ');
-          };
           const nodes = Array.from(
             document.querySelectorAll(
               'a, button, input, select, textarea, [role="button"], [role="link"], [onclick], [tabindex]:not([tabindex="-1"])'
@@ -135,6 +133,7 @@ async function runLaunch() {
           });
           document.querySelectorAll('[data-dogfood-badge]').forEach((n) => n.remove());
           const map = {};
+          const generation = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
           nodes.forEach((el, i) => {
             const n = i + 1;
             const r = el.getBoundingClientRect();
@@ -154,8 +153,9 @@ async function runLaunch() {
               pointerEvents: 'none',
             });
             document.body.appendChild(badge);
+            el.setAttribute('data-dogfood-ref', `${generation}-${n}`);
             map[n] = {
-              selector: selectorFor(el),
+              selector: `[data-dogfood-ref="${generation}-${n}"]`,
               tag: el.tagName.toLowerCase(),
               text: (el.innerText || el.value || el.placeholder || '').trim().slice(0, 80),
             };
@@ -237,8 +237,24 @@ async function runLaunch() {
 
 async function main() {
   switch (cmd) {
-    case 'launch':
-      await runLaunch();
+    case 'launch': {
+      const lock = path.join(stateDir, 'OWNER');
+      const descriptor = fs.openSync(lock, 'wx');
+      fs.closeSync(descriptor);
+      const stop = () => fs.writeFileSync(stopFile, '');
+      process.on('SIGTERM', stop);
+      process.on('SIGINT', stop);
+      try {
+        await runLaunch();
+      } finally {
+        fs.rmSync(readyFile, { force: true });
+        fs.rmSync(lock, { force: true });
+      }
+      return;
+    }
+
+    case 'viewport':
+      console.log(JSON.stringify(await rpc('viewport', { width: args.width, height: args.height })));
       return;
 
     case 'close':
@@ -250,7 +266,7 @@ async function main() {
       return;
 
     case 'snapshot':
-      console.log(JSON.stringify(await rpc('snapshot', {}), null, 2));
+      console.log(await rpc('snapshot', {}));
       return;
 
     case 'screenshot':

@@ -1,6 +1,5 @@
 ---
 description: "Open, inspect or close a mission — the brief and audit trail for work spanning more than one sitting"
-argument-hint: "[slug] · or 'new <name>' · or 'status' · or 'close <slug>'"
 allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "AskUserQuestion"]
 ---
 

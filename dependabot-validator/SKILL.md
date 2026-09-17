@@ -1,13 +1,11 @@
 ---
 name: dependabot-validator
-description: Validate a Dependabot PR's package updates against the current project to find compatibility issues before merging. Use when the user wants to check whether a Dependabot pull request is safe to merge, or when they want to understand the impact of a dependency upgrade.
+description: Validate dependency updates from Dependabot, Renovate, or manual changes against the current project to find compatibility issues before merging. Use when the user wants to check whether a Dependabot pull request is safe to merge, or when they want to understand the impact of a dependency upgrade.
 ---
 
 # Dependabot Validator Skill
 
 Analyzes a Dependabot PR's dependency changes against the current project to surface breaking changes, deprecated APIs, and compatibility issues before merging.
-
-See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, and the [top-level skills index](../USE_CASES.md) — use [pr-grill-me](../pr-grill-me/SKILL.md) instead for a general PR review that isn't specifically about dependency compatibility.
 
 Uses only the four core tools (**Read, Write, Edit, Bash**) plus `git` and `curl`. No harness-specific web-search or API tool is required — changelog lookups go through package-registry HTTP APIs via `curl`, which are deterministic and need no search engine.
 
@@ -22,7 +20,7 @@ git ls-remote origin HEAD
 
 ## Inputs
 
-- **PR number** (required). If the user didn't give one, ask: "What's the Dependabot PR number?"
+- **PR number** (required). If the user didn't give one, ask: "Which PR or base/head refs should I review?"
 - The command runs inside the target repo (current directory).
 
 ## Workflow
@@ -31,35 +29,16 @@ Work through these steps in order. If your harness has a task list, track each s
 
 ### 1. Fetch the PR and read what it changes
 
-Fetch the PR branch into a local temp branch. **Replace `<PR_NUMBER>` with the actual number everywhere it appears** (e.g. for PR 42: `pull/42/head:pr-42`):
-```bash
-git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
-```
+Resolve actual base/head refs from PR metadata (`gh pr view <N> --json
+baseRefName,baseRefOid,headRefOid`) or user-supplied refs for manual updates.
+Fetch those refs without overwriting local branches, verify their OIDs match the
+metadata, and compute `git merge-base <base-oid> <head-oid>`. Never use the current
+checkout as the assumed base. If history is insufficient, report inconclusive.
 
-Read the commit messages — Dependabot always names the package and versions there:
-```bash
-git log pr-<PR_NUMBER> --not HEAD --pretty=%B
-# e.g. "Bump lodash from 4.17.20 to 4.17.21"
-# or   "Bump actions/checkout from 3 to 4"
-```
-
-Parse every `Bump <package> from <X> to <Y>` line into a working list, one row per package:
-```
-{ package, ecosystem, from_version, to_version }
-```
-
-Diff the manifests and lockfiles between your branch and the PR branch to confirm exactly what changed:
-```bash
-git diff HEAD..pr-<PR_NUMBER> -- \
-  package.json package-lock.json \
-  requirements.txt Pipfile.lock \
-  Cargo.toml Cargo.lock \
-  go.mod go.sum \
-  pom.xml build.gradle \
-  Gemfile.lock composer.lock
-```
-
-**Do not delete the temp branch yet** — later steps compare against it. You'll remove it in Step 8.
+Read manifests and lockfiles at the merge-base and head. Derive each package's
+ecosystem and before/after version from those files; commit messages are hints,
+not the source of truth. Record exact OIDs and the comparison list. No bot author
+or `Bump ...` message is required.
 
 ### 2. Detect the project ecosystem
 
@@ -94,55 +73,7 @@ Then open the matching files (Read tool) and note the specific symbols, function
 
 ### 4. Research breaking changes (via curl, no search engine needed)
 
-For each package: find the source repo, confirm both versions exist, then read the release notes **strictly between `from_version` and `to_version`**. Extract fields with a small Python filter — do **not** `head` a raw registry document (it's large, field order isn't a contract, and you'll cut off exactly what you need).
-
-**Step 4a — npm: get the repo/homepage and confirm both versions exist.**
-```bash
-curl -sSL "https://registry.npmjs.org/<pkg>" | python3 -c '
-import sys, json, re
-d = json.load(sys.stdin)
-repo = re.sub(r"^git\+|\.git$", "", (d.get("repository") or {}).get("url") or "")
-print("repo:", repo or "(none)")
-print("homepage:", d.get("homepage") or "(none)")
-vs = d.get("versions", {})
-for v in ("<from_version>", "<to_version>"):
-    print(v + ":", "present" if v in vs else "MISSING from registry")
-'
-```
-
-**Step 4a — PyPI (Python):** repo/homepage and project URLs.
-```bash
-curl -sSL "https://pypi.org/pypi/<pkg>/json" | python3 -c '
-import sys, json
-d = json.load(sys.stdin)["info"]
-print("homepage:", d.get("home_page") or "(none)")
-print("project_urls:", d.get("project_urls") or {})
-'
-```
-
-**Step 4b — GitHub releases within the version range.** Once you have `<owner>/<repo>` from 4a, print only releases whose tag is in `(from_version, to_version]`, with full bodies (not truncated to a fixed length):
-```bash
-curl -sSL "https://api.github.com/repos/<owner>/<repo>/releases?per_page=100" | python3 -c '
-import sys, json, re
-frm, to = "<from_version>", "<to_version>"
-def key(t): return [int(x) for x in re.findall(r"\d+", t.lstrip("vV"))[:3]] or [0]
-data = json.load(sys.stdin)
-if isinstance(data, dict):                       # error object (rate-limited / not found)
-    print("release lookup FAILED:", data.get("message")); sys.exit()
-lo, hi = key(frm), key(to)
-hits = sorted((r for r in data if lo < key(r["tag_name"]) <= hi), key=lambda r: key(r["tag_name"]))
-for r in hits:
-    print("###", r["tag_name"]); print((r["body"] or "").strip()); print()
-if not hits:
-    print("NO releases found in range", frm, "->", to, "— try tags or CHANGELOG (Step 4c).")
-'
-```
-
-**Step 4c — fallback if the project keeps a CHANGELOG instead of GitHub Releases:**
-```bash
-curl -sSL "https://raw.githubusercontent.com/<owner>/<repo>/HEAD/CHANGELOG.md" | sed -n '1,200p'
-```
-Read the entries between the two versions.
+For each package: find the source repo, confirm both versions exist, then read the release notes **strictly between `from_version` and `to_version`**. Use the recipes in [references/registry-lookups.md](references/registry-lookups.md): npm/PyPI registry metadata for repo/homepage and version existence, GitHub releases filtered to the version range, and a CHANGELOG fallback. Extract fields with a small Python filter — do **not** `head` a raw registry document (it's large, field order isn't a contract, and you'll cut off exactly what you need).
 
 **If you cannot establish the release notes** for a package (private, moved/renamed repo, no tags, API rate-limited): ask the user for the changelog URL and `curl` it, or explicitly mark that package **"breaking-change research inconclusive"** in the report. **Do not default an un-researched package to Safe.**
 
@@ -160,26 +91,19 @@ For each package, compare what the project uses (Step 3) against what changed (S
 - **Review needed** — the update touches an API the project uses; a manual check or small code change may be required.
 - **Breaking** — the update removes or renames something the project calls; code changes are mandatory before merging.
 
-### 6. Run the test suite against the PR's dependency state (regression check)
+### 6. Compare reproducible baseline and updated tests
 
-⚠️ **Tests must run with the *updated* dependencies, not your current checkout.** Running `npm test` in the current working tree tests your *existing* deps and can produce a false MERGE SAFE without ever exercising the update. Use an isolated **git worktree** checked out to the PR branch, install the updated deps there, and run tests there.
+Create two detached worktrees in a fresh run directory using the reviewed base
+and head OIDs. Never change the user's checkout. Install from each lockfile and
+run the same relevant test commands with matching environment versions. Python
+runs need separate virtual environments; do not install into the user's environment.
+Capture full logs and actual exit codes (use `set -o pipefail` if piping to `tee`).
 
-Create the worktree (replace `<PR_NUMBER>`):
-```bash
-git worktree add ./.dependabot-validator/pr-<PR_NUMBER> pr-<PR_NUMBER>
-```
-
-Install the updated deps and run tests **inside** the worktree. Each command uses a subshell `( cd … && … )` so it works even if your harness runs each Bash call in a fresh shell (the `cd` doesn't need to persist):
-```bash
-( cd ./.dependabot-validator/pr-<PR_NUMBER> && npm ci && npm test ) 2>&1 | tail -60                       # npm
-( cd ./.dependabot-validator/pr-<PR_NUMBER> && pip install -r requirements.txt && pytest --tb=short -q ) 2>&1 | tail -60   # Python
-( cd ./.dependabot-validator/pr-<PR_NUMBER> && cargo test ) 2>&1 | tail -60                               # Rust
-( cd ./.dependabot-validator/pr-<PR_NUMBER> && go test ./... ) 2>&1 | tail -60                            # Go
-( cd ./.dependabot-validator/pr-<PR_NUMBER> && mvn test -q ) 2>&1 | tail -60                              # Java (Maven)
-```
-(For Python, prefer a throwaway venv inside the worktree if the project uses one, so you don't mutate the ambient environment.)
-
-If tests genuinely can't run (missing environment, secrets, database), say so **explicitly** in the report and rely on the static analysis from Steps 3–5 — **do not report MERGE SAFE on the basis of tests you didn't actually run against the update.**
+Compare outcomes: a failure present on both revisions is not automatically caused
+by the update. Verify the resolved package versions, not just successful install
+commands. If prerequisites, credentials, or tests are unavailable, the result is
+**INCONCLUSIVE**, with static findings and the untested behavior named. Do not
+claim merge safety from a skipped or unrepresentative test run.
 
 ### 7. Check for peer / transitive dependency conflicts
 
@@ -191,77 +115,18 @@ cargo check 2>&1 | head -30                                  # Rust
 
 ### 8. Clean up
 
-Remove the worktree from Step 6 **first** (git won't delete a branch that's checked out in a worktree), then the temp branch:
-```bash
-git worktree remove ./.dependabot-validator/pr-<PR_NUMBER> --force
-git branch -D pr-<PR_NUMBER>
-```
-(If Step 6 was skipped, only the `git branch -D` line is needed.)
+Remove only the worktrees created by this run, using `git worktree remove` without
+`--force`. If generated or modified files prevent removal, report and retain the
+worktree for review. No local PR branch needs deletion.
 
-### 9. Write the report
 
-Produce this report for the user:
+## Report
 
----
+Produce the validation report using
+[references/report-template.md](references/report-template.md). Test results are
+marked passed only when run against the PR's updated deps in the worktree —
+never from a run in the current checkout. Recommendations are **MERGE SAFE**,
+**REVIEW BEFORE MERGING**, or **DO NOT MERGE**.
 
-## Dependabot PR Validation Report
-
-**PR:** #<number> — <title>
-**Base branch:** `<branch>` | **Updated packages:** <count>
-
-### Package Analysis
-
-| Package | From | To | Risk | Notes |
-|---------|------|----|------|-------|
-| `<pkg>` | `x.y.z` | `a.b.c` | ✅ Safe / ⚠️ Review / ❌ Breaking | <one-line summary> |
-
-### Findings
-
-For each ⚠️ or ❌ package:
-- **What changed** in the new version that affects this project
-- **Where the project uses it** (file paths, line numbers if found)
-- **What action is needed** (no action / update call sites / add adapter / block merge)
-
-### Test Results
-✅ Passed **against the PR's updated deps (worktree)** / ⚠️ Skipped (reason — tests NOT run against the update) / ❌ Failed (summary). Never mark this ✅ from a run in the current checkout.
-
-### Peer Dependency Conflicts
-✅ None detected / ⚠️ Conflicts found (list them)
-
-### Recommendation
-
-**MERGE SAFE** — No breaking changes detected. All updates are patch/minor fixes or security patches with no API-surface impact on this codebase.
-
-— or —
-
-**REVIEW BEFORE MERGING** — These packages need attention first: (list packages + required actions)
-
-— or —
-
-**DO NOT MERGE** — Breaking changes detected that will cause failures. Required fixes listed above.
-
----
-
-## Tips for Common Ecosystems
-
-### npm / Node.js
-- Semver major bumps (1.x → 2.x) almost always have breaking changes.
-- Check `peerDependencies` changes in the updated lib's `package.json`.
-- Watch for renamed exports or CommonJS → ESM transitions.
-
-### Python
-- Check if the package dropped a Python version.
-- Watch for import-path renames (`from pkg import OldClass` → `from pkg.new import OldClass`).
-- Review type-annotation changes if the project uses mypy/pyright.
-
-### Rust
-- Check whether public trait implementations changed (method signatures, added required methods).
-- Feature-flag changes can silently remove functionality.
-
-### Go
-- Module-path changes mean all imports must be updated.
-- Interface changes break any code that implements or accepts the interface.
-
-### Java
-- Check for removed annotations or changed annotation parameters.
-- Spring Boot / Jakarta EE namespace migrations are common breaking points.
+Ecosystem-specific breaking-change patterns live in
+[references/ecosystem-tips.md](references/ecosystem-tips.md).

@@ -1,6 +1,5 @@
 ---
 description: "Ask D.A.V.E. whether you're still on track — an honest drift check, right now"
-argument-hint: ""
 allowed-tools: ["Bash", "Read", "Glob", "Grep"]
 ---
 

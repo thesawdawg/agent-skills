@@ -3,7 +3,7 @@
 #
 # Two modes, set by "mode" in the config:
 #   repo  (default) — docs live in a SEPARATE repository, cloned locally.
-#                     publish = branch + commit + push + PR.
+#                     publish = local branch + scoped commit; user publishes.
 #   local           — docs live in THIS project repo under docs_root.
 #                     No remote, no branch, no push: publish = commit on the
 #                     current branch, leaving pushing to the user.
@@ -19,8 +19,7 @@
 #   doc-repo.sh list                            # list tracked doc files under docs_root
 #   doc-repo.sh search <term> [term...]         # grep doc files for terms (OR), file:line:text
 #   doc-repo.sh diff                            # working-tree diff, scoped to docs_root
-#   doc-repo.sh revert                          # discard drafted doc changes under docs_root
-#   doc-repo.sh publish <branch> <commit-msg-file> [pr-body-file]
+#   doc-repo.sh publish <branch> <commit-msg-file> <approved-files-manifest>
 #                                               # local mode ignores <branch>
 #
 # Config is read from the project repo at:
@@ -70,7 +69,7 @@ esac
 in_docs() { git -C "$doc_path" "$@"; }
 
 cmd="${1:-}"
-[ -n "$cmd" ] || { echo "usage: doc-repo.sh {config|mode|path|root|sync|list|search|diff|revert|publish} ..." >&2; exit 2; }
+[ -n "$cmd" ] || { echo "usage: doc-repo.sh {config|mode|path|root|sync|list|search|diff|commit|publish} ..." >&2; exit 2; }
 shift || true
 
 case "$cmd" in
@@ -127,48 +126,31 @@ case "$cmd" in
     ;;
 
   revert)
-    in_docs checkout -- "$docs_root" 2>/dev/null || true
-    in_docs clean -fd -- "$docs_root"
-    echo "reverted drafted doc changes under $docs_root"
+    echo "commit-documentor: broad revert removed; preserve drafts or undo only run-owned edits after review." >&2
+    exit 2
     ;;
 
-  publish)
+  publish|commit)
     new_branch="${1:?branch name required (ignored in local mode)}"
     msg_file="${2:?commit message file required}"
-    body_file="${3:-}"
-    [ -f "$msg_file" ] || { echo "commit-documentor: commit message file not found: $msg_file" >&2; exit 2; }
-    if [ -z "$(in_docs status --porcelain -- "$docs_root")" ]; then
-      echo "commit-documentor: no doc changes under $docs_root to publish" >&2
-      exit 5
-    fi
-
-    if [ "$mode" = "local" ]; then
-      # Stay on the user's current branch and commit ONLY the docs, so unrelated
-      # working-tree changes are never swept into the commit. Never pushes.
-      in_docs add -A -- "$docs_root"
-      in_docs commit -F "$msg_file" -- "$docs_root"
-      in_docs log -1 --oneline
-      echo "local mode: committed on $(in_docs rev-parse --abbrev-ref HEAD); not pushed — push with the rest of your work." >&2
-      exit 0
-    fi
-
-    in_docs checkout -b "$new_branch"
-    in_docs add -A -- "$docs_root"
-    in_docs commit -F "$msg_file"
-    in_docs push -u origin "$new_branch"
-    if command -v gh >/dev/null; then
-      if [ -n "$body_file" ] && [ -f "$body_file" ]; then
-        (cd "$doc_path" && gh pr create --base "$branch" --head "$new_branch" \
-          --title "$(head -1 "$msg_file")" --body-file "$body_file") \
-          || echo "commit-documentor: branch pushed, but 'gh pr create' failed — open the PR manually against $branch." >&2
-      else
-        (cd "$doc_path" && gh pr create --base "$branch" --head "$new_branch" \
-          --title "$(head -1 "$msg_file")" --body "$(tail -n +2 "$msg_file")") \
-          || echo "commit-documentor: branch pushed, but 'gh pr create' failed — open the PR manually against $branch." >&2
-      fi
-    else
-      echo "gh CLI not found — branch pushed; open the PR manually against $branch." >&2
-    fi
+    manifest="${3:?approved file manifest required (one repo-relative path per line)}"
+    [ -f "$msg_file" ] && [ -f "$manifest" ] || { echo "missing message or manifest" >&2; exit 2; }
+    files=()
+    root_path=$(realpath -m "$doc_path/$docs_root")
+    while IFS= read -r file || [ -n "$file" ]; do
+      [ -n "$file" ] || continue
+      case "$file" in /*|:*|../*|*/../*|*/..) echo "invalid approved path: $file" >&2; exit 2 ;; esac
+      resolved=$(realpath -m "$doc_path/$file")
+      case "$resolved" in "$root_path"/*) ;; *) echo "approved path outside docs_root: $file" >&2; exit 2 ;; esac
+      [ ! -d "$resolved" ] || { echo "manifest requires files, not directories" >&2; exit 2; }
+      files+=("$file")
+    done < "$manifest"
+    [ "${#files[@]}" -gt 0 ] || { echo "empty approved manifest" >&2; exit 2; }
+    if [ "$mode" = repo ]; then in_docs checkout -b "$new_branch"; fi
+    in_docs --literal-pathspecs add -A -- "${files[@]}"
+    in_docs --literal-pathspecs commit --only -F "$msg_file" -- "${files[@]}"
+    in_docs log -1 --oneline
+    echo "Committed approved files locally. Publication remains a user action." >&2
     ;;
 
   *)

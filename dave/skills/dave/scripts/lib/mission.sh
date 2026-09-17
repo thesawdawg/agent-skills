@@ -15,11 +15,20 @@
 
 MISSION_VERDICTS="trust partial rerun discard"
 
-# Agent definitions live in the plugin; a harness that installs them elsewhere can
-# say so rather than losing the return-format contract.
+# Role contracts are bundled with the skill; hosts may explicitly override them.
 _agents_dir() {
   if [ -n "${DAVE_AGENTS_DIR:-}" ]; then printf '%s\n' "$DAVE_AGENTS_DIR"; return 0; fi
-  printf '%s\n' "$PLUGIN_ROOT/agents"
+  printf '%s\n' "$SCRIPT_DIR/../references/roles"
+}
+
+# Preserve stored identifiers without rewriting mission history.
+_role_name() {
+  case "$1" in
+    constructor) printf '%s\n' implementer ;;
+    brainstormer|ideator) printf '%s\n' options ;;
+    module-finder) printf '%s\n' scout ;;
+    *) printf '%s\n' "$1" ;;
+  esac
 }
 
 _mission_path() { printf '%s/%s.md\n' "$MISSIONS" "$1"; }
@@ -392,7 +401,7 @@ _mission_pack() {
   project="$(printf '%s' "$meta" | jq -r '.project // ""')"
   ref="$(printf '%s' "$meta" | jq -r '.ref // ""')"
 
-  local agent_file; agent_file="$(_agents_dir)/$agent.md"
+  local agent_file; agent_file="$(_agents_dir)/$(_role_name "$agent").md"
   [ -f "$agent_file" ] || die "no definition for agent '$agent' at $agent_file — a charge without a return contract is not a charge (set DAVE_AGENTS_DIR if they live elsewhere)"
   local return_format; return_format="$(_md_section "$agent_file" "Return format")"
   [ -n "$(printf '%s' "$return_format" | tr -d '[:space:]')" ] \

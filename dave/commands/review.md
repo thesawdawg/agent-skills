@@ -1,6 +1,5 @@
 ---
 description: "The weekly sweep — what's slipping, what's owed, what's rotting, and what's quiet and fine"
-argument-hint: "[days back, default 7]"
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "AskUserQuestion"]
 ---
 

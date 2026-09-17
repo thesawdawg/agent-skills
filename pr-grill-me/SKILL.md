@@ -7,8 +7,6 @@ description: Interview the user about their PR's intent and expected behavior, t
 
 Interviews the author about what their PR is supposed to do, then holds the diff up to those answers to find discrepancies — things the code doesn't do that it should, things it does that it shouldn't, and edge cases that weren't considered.
 
-See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, and the [top-level skills index](../USE_CASES.md) — use [dependabot-validator](../dependabot-validator/SKILL.md) instead for a Dependabot dependency-bump PR specifically.
-
 Uses only the four core tools (**Read, Write, Edit, Bash**) plus `git`. No harness-specific tools required — the "interview" is just plain questions asked in chat, one at a time.
 
 ## Inputs
@@ -29,16 +27,31 @@ git remote get-url origin
 # git@github.com:myorg/myrepo.git   → owner=myorg repo=myrepo
 # https://github.com/myorg/myrepo.git → owner=myorg repo=myrepo
 ```
-If the remote is **not GitHub** (GitLab, Bitbucket, self-hosted), the `pull/<N>/head` ref used below is GitHub-specific. For other hosts, ask the user for the source branch name and diff that branch against the base instead (`git fetch origin <branch>` then `git diff HEAD..FETCH_HEAD`).
+If the remote is **not GitHub** (GitLab, Bitbucket, self-hosted), the `pull/<N>/head` ref used below is GitHub-specific. For other hosts, ask the user for the source and base refs; fetch both and compare their merge-base. Never infer the base from the current checkout.
 
 ### 2. Fetch the PR diff
 
-Fetch the PR branch and generate a full diff against the current base. **Replace `<PR_NUMBER>` with the actual number everywhere** (e.g. for PR 42: `pull/42/head:pr-42`):
+Resolve the actual base/head with `gh pr view <N> --json baseRefName,baseRefOid,headRefOid`.
+Fetch the base branch and PR head without creating or overwriting local branches.
+For PR 42 (substitute the real number):
+
 ```bash
-git fetch origin pull/<PR_NUMBER>/head:pr-<PR_NUMBER>
-git log pr-<PR_NUMBER> --not HEAD --pretty="%s%n%b"   # commit messages = stated intent
-git diff HEAD..pr-<PR_NUMBER>                          # the actual change
+metadata=$(gh pr view 42 --json baseRefName,baseRefOid,headRefOid)
+base_name=$(printf '%s' "$metadata" | jq -r .baseRefName)
+git fetch origin "$base_name"
+base=$(git rev-parse FETCH_HEAD)
+git fetch origin pull/42/head
+head=$(git rev-parse FETCH_HEAD)
+test "$base" = "$(printf '%s' "$metadata" | jq -r .baseRefOid)" || exit 1
+test "$head" = "$(printf '%s' "$metadata" | jq -r .headRefOid)" || exit 1
+merge_base=$(git merge-base "$base" "$head") || exit 1
+git log "$merge_base..$head" --pretty="%s%n%b"
+git diff "$merge_base" "$head"
 ```
+
+If refs changed during fetching, refresh metadata and retry once. Report blocked
+if the refs or merge-base cannot be established (including shallow history).
+Record the reviewed OIDs so the report identifies its exact inputs.
 
 Read the diff and the commit messages carefully. **Do NOT show the diff to the user yet, and do not summarize it for them** — read and internalize it silently. You'll use it to evaluate their answers, and the contrast only works if they answer from memory rather than from your summary.
 
@@ -112,9 +125,7 @@ One or two things where the diff clearly matches the stated intent — keep the 
 
 ### 6. Clean up
 
-```bash
-git branch -D pr-<PR_NUMBER>
-```
+No local branch was created. Preserve the user's checkout and uncommitted work.
 
 ## Tone Guidelines
 
