@@ -586,8 +586,10 @@ Repository evidence is linked throughout. External documentation was checked on 
 
 ### Remaining / deferred
 
-- Browser fixture is written but unexercised here; run
-  `VERIFY_BROWSER=1 bash scripts/verify.sh` on a host where Chromium can launch.
+- Browser fixture exercised 2026-09-17 on a host where Chromium launches:
+  `setup.sh --install-browser` populated the lockfile-keyed cache and
+  `tests/test_browser.py` passed lifecycle, `ariaSnapshot`, and axe against
+  Playwright 1.61.1. `VERIFY_BROWSER=1 bash scripts/verify.sh` is the full gate.
 - Flask relocation deferred until its owning project is identified; the entry
   carries a deprecation note and a negative trigger fixture.
 - Installed personal copies of superseded entries are untouched; README's
