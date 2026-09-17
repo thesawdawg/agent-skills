@@ -4,6 +4,20 @@ Date: 2026-09-16
 
 Status: proposed implementation plan. The assessment was approved; the changes below have not been implemented.
 
+> ## Review comments — Devin, 2026-09-16
+>
+> Inline notes below are marked `> **Review (Devin):**`. Verdict: the plan is sound and correctly scoped — the verified defects are real, and the sequencing (correctness → distribution → merges → docs → additions) is right. My main disagreements: (a) the `skills/<name>/` container relocation is unnecessary churn given how the installer actually discovers skills — flatten `pi-skills/` to root and leave `dave/skills/dave` in place instead; (b) a few places where the plan under-states (pi-skills invisibility, `../dogfood` breakage) or where a cheaper/more concrete fix exists. Details inline.
+>
+> Evidence I gathered independently for this review:
+>
+> - **Installer discovery test (the big one):** `npx skills add thesawdawg/agent-skills --list` (skills@1.6.0) reports **16 skills: all 15 root skills plus `dave` (found via the `dave/skills/dave/` layout) — and none of the five `pi-skills/*` skills**. The pi-skills aren't merely redundant with root conventions; they are *not installable through the documented installer today*. This converts F4 from a tidiness issue into a functional defect and is the strongest argument for the user's instinct.
+> - **`npx skill` is a different package.** `skill@1.0.2` (tonglei100/skill) is a CodeBuddy installer hardcoded to fetch `skills/<name>` subtrees from `vercel-labs/agent-skills` into `.codebuddy/skills/`; it has no `install` subcommand and cannot install this repo at all. If the user literally types `npx skill install`, nothing installs. The working command remains `npx skills add thesawdawg/agent-skills -g` — the plan's "confirm the actual installer" step is therefore mandatory, not pedantic.
+> - **Playwright removal confirmed upstream** (microsoft/playwright#38151; removal announced in release notes). The replacement is `locator.ariaSnapshot()` (available since 1.49), which returns a YAML-ish text tree — arguably a *better* LLM-consumable format than the old JSON snapshot.
+> - **Duplication measured:** ~2,200 lines of `USE_CASES.md`/chooser material (14 per-skill files + root 259 + pi-skills 543 + dave 207) plus a 781-line retired implementation plan and per-skill READMEs — against ~4,400 lines of actual `SKILL.md`. Roughly a third of the repo's markdown exists to help selection, a job frontmatter `description` already does (and demonstrably does well — the CLI's `--list` output is entirely description-driven).
+> - **Doc destruction confirmed:** `doc-repo.sh revert` runs `git clean -fd` over the whole docs root — it permanently deletes untracked user files, not just files the run created.
+>
+> Recommended deltas to this plan, summarized: (1) replace the `skills/` container move with a flat-root flatten of `pi-skills/`; (2) keep `dave/skills/dave/` where it is — it's already discovered and already the plugin's internal layout; (3) ship Phase 1's independent fixes as small commits immediately; (4) add release tagging, a repo `AGENTS.md`, a shared `scripts/preflight.sh` convention, and a `--list` snapshot test to §6; (5) treat the `code-review` extraction as Phase-5 default-yes rather than "if used often enough"; (6) decide `app-design`'s name in Phase 3 while renames are cheap.
+
 ## Executive recommendation
 
 **Keep a collection of small, useful skills. Stop maintaining separate harness identities, repeated selection guides, and competing orchestration workflows.**
@@ -48,6 +62,8 @@ Before implementation, record the actual installer package/version and test that
 
 A skill install must not be advertised as also registering plugin agents, commands, hooks, or always-on rules. Those are separate harness capabilities.
 
+> **Review (Devin):** Resolved empirically — `npx skills add thesawdawg/agent-skills --list` works and discovers 16 skills (15 root + `dave`). Note it discovers `dave/skills/dave/` but *not* `pi-skills/*` — the five pi-skills are invisible to the installer as shipped. Also, if the user's "npx skill install" was literal: `skill` (singular) on npm is a different, CodeBuddy-targeted package that can only fetch from `vercel-labs/agent-skills`; it cannot install this repo. The README should also document the CLI's selective surface — `--list`, `--skill <name>`, `--copy`, `--all`, and `skills use` — since selective install is what makes "one repo, pick what you want" viable and weakens the case for splitting D.A.V.E. into its own repo.
+
 ## 2. Findings and evidence
 
 ### P0 — installation and execution correctness
@@ -65,6 +81,8 @@ A skill install must not be advertised as also registering plugin agents, comman
 
 **Recommendation:** put canonical role contracts inside the D.A.V.E. skill and resolve them relative to the script. Make optional plugin agents thin wrappers over those contracts. Test installed `mission pack`, not just installed `init`.
 
+> **Review (Devin):** Verified — `common.sh:13` derives `PLUGIN_ROOT` by ascending three dirs, and `mission.sh` dies when `$PLUGIN_ROOT/agents/<role>.md` is absent. Concrete minimal fix consistent with this recommendation: keep `dave/skills/dave/` where it is (it's already discovered by the CLI — see §4 note), move the nine role files to `dave/skills/dave/references/roles/`, and make `_agents_dir` default to `$SCRIPT_DIR/../references/roles` with `DAVE_AGENTS_DIR` and the plugin path as overrides. For the plugin's `agents/*.md`: prefer thin wrappers that *instruct the spawned agent to read the canonical role file first* over generated copies — Claude Code agents can read files, and wrappers-that-read can't drift the way a sync script can. If full copies are required by a host, generate them in CI from the canonical source with a drift check rather than maintaining two edited files.
+
 #### F2. Shared browser setup is inconsistent, and the locked API is incompatible
 
 [dogfood](dogfood/SKILL.md) resolves its own install path and documents a detached browser process. [accessibility-audit](accessibility-audit/SKILL.md), lines 14–46, instead uses `../dogfood/scripts` from the caller's working directory, assumes Chromium is preinstalled, and names `run_in_background: true` as though every harness exposed that option.
@@ -74,6 +92,8 @@ The [driver](dogfood/scripts/browser-driver.mjs), line 103, calls `page.accessib
 **Consequence:** the snapshot command is incompatible with the declared locked dependency. This particularly undermines the text-only fallback used to claim portability. Confirmed by source/lockfile/upstream documentation, not by launching a browser in this assessment.
 
 **Recommendation:** add a failing local browser smoke test, replace the obsolete call with a supported snapshot API and documented output shape, and centralize browser setup instructions. Preserve the difference between a structural snapshot and an axe accessibility audit.
+
+> **Review (Devin):** Verified — `package-lock.json` resolves `playwright-core@1.61.1`, and upstream removed `page.accessibility` (microsoft/playwright#38151). Two concrete fixes, cheapest first: (a) pin `playwright` below the removal release, or (b) switch the `snapshot` command to `locator.ariaSnapshot()` — returns an indented text tree that models consume *better* than the old JSON, so this is an upgrade disguised as a fix. Before doing either, seriously evaluate the plan's own suggestion to drop the driver: Playwright MCP, Chrome DevTools MCP, and `agent-browser`-style CLIs are now maintained substitutes for a hand-rolled 308-line driver plus the detached-`nohup`-and-poll choreography that dominates dogfood's SKILL.md. What's worth keeping regardless is the JSONL evidence-stream convention (which lives in the skill text, not the driver). One more defect worth calling out explicitly: `accessibility-audit`'s `../dogfood/scripts/...` resolves relative to the *user's working directory*, so it isn't just inconsistent — it is broken in every scenario except running from inside the source checkout. That's a hard sibling dependency that must be declared and preflighted per packaging rule 3, not documented around.
 
 #### F3. Policy conflicts and cleanup ownership need resolution
 
@@ -85,6 +105,8 @@ The [driver](dogfood/scripts/browser-driver.mjs), line 103, calls `page.accessib
 
 **Recommendation:** retain the user's no-push default. Skills must stop at a prepared diff/commit and give the user the next command where policy prohibits publication. Do not reinterpret a skill invocation as permission to override policy. Any future exception must be explicitly decided by the user. Track run-owned output; never reset, clean, or overwrite unrelated work as routine cleanup.
 
+> **Review (Devin):** Agree, and I'd sharpen two items. `doc-repo.sh revert` (`checkout --` + `clean -fd` over the whole docs root) can permanently destroy untracked files the run never created — I'd remove the `revert` subcommand outright rather than repair it; if rollback is wanted, track a per-run manifest of written files and delete only those. For dogfood's `: > issues.jsonl` truncation: prefer fail-if-exists or a run-ID'd output dir over silent truncation. On no-push: note that D.A.V.E.'s `sync push` exists specifically to sync `~/.dave` across devices (added in commit 48e241c) — the user may want to keep *that* as a deliberate, explicitly-invoked exception while keeping the blanket default. The fix is that no skill may *auto-invoke* it; requiring the user to run `dave sync push` themselves preserves both the feature and the policy.
+
 ### P1 — duplication and needless process
 
 #### F4. `pi-skills/` is no longer a meaningful product boundary
@@ -94,6 +116,8 @@ The [driver](dogfood/scripts/browser-driver.mjs), line 103, calls `page.accessib
 The useful requirements are **capabilities and execution assumptions**, not a separate harness brand: filesystem access, shell availability, stateless commands, browser support, image viewing, network access, and delegation.
 
 **Recommendation:** promote useful portability practices to the authoring guide and specific preflight sections. Prefer supported native tools when available; document shell fallbacks where useful. Remove universal claims such as “every harness has Bash,” “you are multimodal,” or “Pi has no subagents.” Say what is available in the current session.
+
+> **Review (Devin):** Stronger than stated: the CLI discovery test shows `pi-skills/*` isn't surfaced by `skills add` at all, so this boundary currently makes five skills uninstallable via the documented path — it's a defect, not a style choice. Second: don't delete `pi-skills/README.md` wholesale. It is the best authoring document in the repo — the capability→portable-fallback table, the no-shell-state rule, JSONL append over growing JSON arrays, detached long-lived processes, the small-model writing rules, and the security expectations are how *every* skill here should be written, not a pi-specific annex. Move it nearly verbatim into the authoring guide (STRUCTURE.md or a new AUTHORING section) rather than extracting a diluted summary. Third: preserve the attribution table per-skill (each moved skill should carry its upstream MIT notice in its own directory so attribution survives selective install).
 
 #### F5. Three layers repeatedly describe selection and execution
 
@@ -108,6 +132,8 @@ Visible drift includes:
 
 **Recommendation:** one short human catalog, one authoring guide, frontmatter for activation, and on-demand examples only when they genuinely improve execution. Preserve upstream copyright/license notices before removing the Pi README. Avoid replacing these documents with a second hand-maintained metadata registry.
 
+> **Review (Devin):** Agree, and I'd go one step further than "remove the mandatory requirement": delete per-skill `USE_CASES.md` outright. STRUCTURE.md's rule that "a skill without one is invisible to selection" is empirically false — the CLI found every skill purely via frontmatter `description`, and no harness reads `USE_CASES.md`. Folding the one or two best worked examples per skill into `references/` keeps their real value without maintaining 14 parallel selection docs. Quantified: ~2,200 lines of chooser material vs ~4,400 lines of actual skill content. The single remaining chooser should be the README table, generated or at least validated against the directory listing in CI so counts can't drift again.
+
 #### F6. Delegation has competing owners and disproportionate defaults
 
 [D.A.V.E.'s contract](dave/skills/dave/references/delegation-contract.md) covers role selection, task briefs, review, grading, and sequencing. [subagent-driven-development](pi-skills/subagent-driven-development/SKILL.md) repeats these responsibilities and mandates an implementer plus two reviewers per task and a final reviewer.
@@ -115,6 +141,8 @@ Visible drift includes:
 Meanwhile, [codex-delegate](codex-delegate/SKILL.md) deliberately resumes a continuous thread. These are different backend/session strategies, not policies every task should satisfy simultaneously. “Fresh focused pass in the main loop” also is not an independent reviewer or a new context.
 
 **Recommendation:** D.A.V.E. owns optional multi-step coordination; provider skills own invocation/session mechanics. Keep ordinary direct execution as the default for small tasks. Let one review check both specification and quality unless risk justifies separate reviews. Reuse a worker for follow-up on the same task; use actual separate context when independent review is requested and supported. State honestly when only self-review occurred.
+
+> **Review (Devin):** Agree. Worth naming the salvageable kernel in `subagent-driven-development` before folding it: "fresh context per task + fully self-contained brief pasted into the prompt + explicit acceptance criteria" is a genuinely good delegation pattern that D.A.V.E.'s contract should absorb as a reference section. The parts to drop are the *mandates* (implementer + two reviewers + final reviewer per task as default). Also endorse keeping codex-delegate/ollama-delegate as pure invocation mechanics — resisting the urge to give them policy is correct; they're adapters, not orchestrators.
 
 #### F7. Role names and stage boundaries create work rather than clarify it
 
@@ -124,6 +152,8 @@ Meanwhile, [codex-delegate](codex-delegate/SKILL.md) deliberately resumes a cont
 
 **Recommendation:** use one meaning per name, put implementation-plan ownership in the architecture/planning workflow, and make detailed artifacts optional sections of a useful primary document. Do not make a user repeat an interview when the approved brief already answers it.
 
+> **Review (Devin):** Agree, plus a naming point the plan skirts: `app-design`'s name lies — it audits existing repositories and explicitly refuses new projects. Since this is a personal repo with a small install base, renaming it (e.g. `app-audit` or `repo-audit`) is cheap *now* and gets more expensive with every install. Decide in Phase 3 alongside the roster renames; if kept, at least fix the description to lead with "audit an existing app" (it already does — the mismatch is only the name). Same logic applies inside D.A.V.E.: renaming agent-Constructor → implementer and merging agent-Ideator → options removes the documented collision at the source, which also lets the README drop its "two name collisions" section entirely.
+
 #### F8. Conventions are not an always-on policy mechanism
 
 `coding-style` and `workflow-rules` duplicate git, type-hint, documentation, and general engineering rules. Both the root chooser and structure guide claim conventions load automatically; a portable `SKILL.md` cannot enforce that.
@@ -131,6 +161,8 @@ Meanwhile, [codex-delegate](codex-delegate/SKILL.md) deliberately resumes a cont
 [flask-tests](flask-tests/SKILL.md) also contains concrete fixtures, module paths, and database assumptions for a different application. Installing it globally does not make those facts true in the current repository. [memory](memory/SKILL.md) should coexist with an existing harness memory system instead of asserting none exists.
 
 **Recommendation:** merge the two conventions into one opt-in workflow/style package with detailed language guidance loaded on demand. Actual always-on behavior belongs in explicitly configured host/project rules, not an installation promise. Move the Flask-specific guidance to its owning project; do not invent a generic test framework to justify retaining it here.
+
+> **Review (Devin):** Agree with one nuance: in harnesses that surface all installed skills, "use whenever writing code" descriptions *do* function as de-facto always-on — the defect is the enforcement promise, not the mechanism. So the merged skill should say plainly: "this is advisory; for guaranteed enforcement copy the relevant rules into the project's `AGENTS.md` / host rules file" — actionable instead of aspirational. On flask-tests: agree, relocate to the owning project (its `.agents/skills/` or AGENTS.md). Keep it here until the destination exists — but add a deprecation note to its frontmatter description now so it stops being picked up in unrelated projects.
 
 ### P1 — verification does not yet protect the public contract
 
@@ -147,6 +179,8 @@ scripts/test/run.sh: line 576: today: command not found
 The fixture calls a helper unavailable in the test shell; the runner still reports success. The Pi installer self-test passes but checks installed `init`, not installed `mission pack`.
 
 **Recommendation:** count unexpected fixture/command failures as failures, without breaking intentionally asserted nonzero exits. Add copy/install execution tests and small trigger evaluations, not just more assertions that files exist.
+
+> **Review (Devin):** The `today` failure is a one-line bug — `run.sh:576` calls `$(today)`, which isn't a function or a binary (should be `$(date +%F)` or a `today()` helper). Add to the CI set: `bash -n` + shellcheck across `dave/skills/dave/scripts/`, `node --check` on the driver, auto-discover and run every `*--selftest*`, and a `skills add --list` snapshot asserting the expected name set — that last one is the regression test that would have caught the pi-skills invisibility before this review did.
 
 ## 3. Skill-by-skill decisions
 
@@ -177,6 +211,18 @@ Preserve public skill names where possible. The proposed `skills/<name>/` layout
 
 Expected steady-state catalog: **17 entries** if the proposed merges and Flask relocation are accepted, before any optional new entry. This is a consequence, not a quota; successful routing and preserved capabilities matter more than the count.
 
+> **Review (Devin):** Table endorsements and refinements:
+>
+> - **`web-pentest` (keep separate):** strongest possible agree — it's the repo's one real safety surface. Retain the pi-README's "STOP — do these first" block convention verbatim at the top; that's exactly the case where mandatory-guardrail callouts earn their lines. Also worth keeping its pi-README sandbox/permission-gate guidance as a reference even after the pi branding is gone — it's good defensive practice for *any* harness.
+> - **`adversarial-ux-test` → dogfood:** agree, and the merger gets easier once the browser driver question is settled — do the driver decision first, merge second, so the persona mode inherits whatever browser path survives.
+> - **`rest-graphql-debug` (475 lines):** the single best candidate for the "lookup, not linear script" split — most of its bulk is symptom/reference tables that belong in `references/` regardless of where the skill lives.
+> - **`cloudflare-temporary-deploy`:** add to "harden": pin a wrangler version in the docs and capture the deploy subprocess exit code explicitly — the parser passing while the deploy failed is a live failure mode.
+> - **`subagent-driven-development`:** folding into D.A.V.E.'s execution reference is right; I'd go further and say *delete* the standalone entry rather than keep a "very small stateless entry" — resurrect it only if dave-less usage is actually observed. A kept-in-case skill is exactly the kind of duplication this cleanup is removing.
+> - **`pr-grill-me`:** the base/head bug is real — `git diff HEAD..pr-N` diffs against *current checkout*, not the PR base. Fix: `gh pr view <N> --json baseRefName` (or remote default branch) then three-dot `git diff origin/<base>...pr-<N>` (merge-base semantics).
+> - **`dependabot-validator`:** modest extension to manual/Renovate updates is fine; the name then misleads — consider `dependency-update-validator` or just let the description carry it.
+> - **`memory`:** agree keep-optional; add that it should detect an existing harness memory system and defer rather than maintain a parallel store — the plan covers this, just flagging it's the difference between useful and harmful.
+> - Missing from the table: **`app-design` rename decision** (see F7 note) and **`codex-delegate`/`ollama-delegate`** — agree they stay mechanics-only; also worth deleting their extra `README.md` files (they're the only skills with both README and USE_CASES — three doc layers for a delegation adapter).
+
 ### D.A.V.E. roster cleanup
 
 Reduce overlapping roles without rewriting the state engine:
@@ -190,9 +236,13 @@ Reduce overlapping roles without rewriting the state engine:
 
 This yields seven clear roles rather than nine. Preserve old role identifiers as lookup aliases during migration; do not rewrite historical mission assignments. Model mappings belong to optional harness configuration, not portable assumptions that every host has Haiku/Sonnet/Opus.
 
+> **Review (Devin):** Agree with the seven-role target. Two additions: (a) the alias layer should live in role *lookup* (a name→file map, e.g. a `aliases` block or a symlinked `references/roles/ideator.md → options.md`) rather than rewriting stored mission files — cheaper and lossless; (b) once the canonical roles move inside the skill bundle (F1), the roster doc and the role files become one source of truth — put the roster table in `references/roles/README.md` or the delegation contract, not a third place.
+
 ## 4. Target organization and ownership
 
 Use a standard `skills/` container rather than simply moving Pi entries into another mixed-layout root. That makes the catalog obvious to maintainers and to the documented CLI discovery rules.
+
+> **Review (Devin):** This is my main disagreement. The empirical discovery test shows `skills add` already finds skills at **flat root** *and* at `<dir>/skills/<name>/` (that's how `dave` was found) — the CLI does not need the container. Meanwhile the move costs: (a) the `git clone → ~/.claude/skills` install path, which relies on `SKILL.md` sitting at top level of the clone — after the move it lands at `~/.claude/skills/skills/<name>/`, and whether nested personal skills are discovered there is version-dependent and unverified; (b) every relative link, the `PLUGIN_ROOT` derivation, the plugin manifest, and `install-pi.sh`; (c) ~17 directory moves of churn for an organizational benefit that the README table already provides. **Recommended alternative achieving the same end state:** keep the flat root (it *is* the catalog), move `pi-skills/<name>` → `<name>`, and leave `dave/skills/dave/` exactly where it is — it's already discovered, already the plugin's internal layout, and moving it would break the plugin's relative structure for zero gain. If the `skills/` convention is still wanted for ecosystem-consistency reasons, verify the clone path on the harnesses the user actually runs *before* Phase 2 — but I'd treat that as optional polish, not part of the cleanup.
 
 ```text
 README.md                    concise catalog, primary install, optional integrations
@@ -233,6 +283,13 @@ tests/                       packaging and behavioral fixtures
 
 The distributable skill catalog is source content, not another host configuration directory. Preserve existing compatibility manifests; do not create parallel tool configurations unnecessarily.
 
+> **Review (Devin):** Endorse all eight rules. Two additions:
+>
+> 9. **Scripts must not require a writable skill directory.** dogfood's `npm install` inside `scripts/` mutates the installed bundle — breaks on `--copy` installs owned by another user or read-only mounts. Install to a cache (`$XDG_CACHE_HOME`/output dir) with `npm ci`, or document it as user-managed environment setup.
+> 10. **Validate links and attribution in CI.** A bundled `LICENSE`/NOTICE per adapted skill is a packaging property (selective install must carry it); broken relative links are the most likely regression of the flatten. Both are cheap greps, not a framework.
+>
+> Also flag rule 2's sharpest edge for symlink installs: `BASH_SOURCE`-derived paths resolve *through* the symlink, so scripts land in the canonical `~/.agents/skills` copy — correct — but any relative path that *wasn't* canonicalized (e.g. `../dogfood` from cwd, per F2) still breaks. The installed-bundle smoke tests should include the symlink case specifically.
+
 ## 5. Reduce process and documentation together
 
 ### A smaller SKILL.md contract
@@ -246,6 +303,8 @@ Use this shape as guidance, not another mandatory paperwork system:
 5. Links to detailed references only where needed.
 
 Aim for roughly 80–150 lines for ordinary workflows, but use a warning rather than a hard size gate. Complex safety-critical workflows may need more. Never move critical approval/scope rules out of the primary instructions merely to meet a line target.
+
+> **Review (Devin):** Scale of the problem, measured: 9 of 21 SKILL.md exceed 150 lines — worst are `rest-graphql-debug` (475), `web-pentest` (382), `dave` (275), `dependabot-validator` (267), `subagent-driven-development` (263), `datasecurer` (255), `commit-documentor` (251), `coding-style`/`adversarial-ux-test` (232). The oversized ones are mostly lookup-style content that belongs in `references/` — the split is high-value, not cosmetic. Separately: the frontmatter `description`s are already good (the CLI's `--list` output reads well); the routing surface is *not* the problem — don't spend effort rewriting descriptions, spend it on bodies.
 
 ### Question and artifact budgets
 
@@ -281,6 +340,15 @@ Aim for roughly 80–150 lines for ordinary workflows, but use a warning rather 
 
 Preflight is a small command/section for skills that need it, not another user-facing skill or a new configuration service. Likewise, trigger evaluations should start as fixtures and manual checks, not an LLM-evaluation platform.
 
+> **Review (Devin):** Endorse the six additions — this is the right "add" list and correctly excludes new orchestration. Expansions:
+>
+> - **Make preflight one shared convention, not N bespoke checks:** a repo `scripts/preflight.sh` pattern where each skill drops a `preflight.sh`/`checks` fragment keeps the mechanism identical across skills and gives CI a single entry point. Still small — one loop over fragments.
+> - **Tag releases.** `skills add` installs from git HEAD with no pinning surface for users. `git tag vX.Y` per cleanup phase gives users a correlate-able revision and gives rollback a target beyond "the previous commit."
+> - **Add `AGENTS.md` for this repo itself** (or make STRUCTURE.md serve explicitly): how to add a skill, run the validator, update the catalog. This repo will be maintained substantially *by agents* — the contributor rules should be agent-legible, and the pi-README authoring guidance folds in naturally here.
+> - **Validator scope:** include the attribution-per-bundle check (packaging rule 10 above) and the `--list` snapshot test (F9 note) — both cheap, both catch classes of bug that already happened.
+> - **`code-review` entry point: default-yes in Phase 5**, not "if used often enough." The gap (reviewing someone else's diff without an interview or dependency framing) is real and the Critic contract already exists to consume. Only defer if extraction reveals the contract is coupled to mission machinery — in which case document "invoke dave's critic" as the interim path rather than duplicating it.
+> - One addition the plan doesn't mention: a **`--selftest`/validate convention already half-exists** (install-pi.sh, parse_deploy_output.py). Formalize it: any script with logic ships `--selftest`, CI runs all of them. It's the cheapest coverage win in the repo.
+
 ### Extend existing tools where capability is genuinely missing
 
 - **Browser QA:** first evaluate whether a maintained browser CLI or native browser tool already meets the needs. If retaining this driver, add only capabilities demanded by the workflows: supported text snapshots, viewport control for responsive/reflow checks, reliable lifecycle/cleanup, and stale element-reference detection. Do not maintain two browser backends without a concrete compatibility need.
@@ -313,6 +381,8 @@ Each phase is independently reviewable. Do not mix catalog relocation, state sch
 
 **Exit criteria:** installed D.A.V.E. can pack a mission without plugin-parent files or a manual path override; browser snapshot works against the lockfile; an intentionally broken fixture fails; approval/cleanup tests preserve unrelated data. No claim that a complete skill is portable until its required path has been exercised.
 
+> **Review (Devin):** Phase 1 contains several *independent* fixes that don't depend on any layout decision — the `$(today)` bug, the Playwright pin/`ariaSnapshot` swap, dogfood's truncation guard, scoping/removing `doc-repo.sh revert`, and the no-push auto-invocation. These are pure bugfixes; ship them as small separate commits now rather than batching them behind the whole phase. Only the D.A.V.E. role-bundling fix is entangled with the layout question — and under the flat-root alternative it gets *simpler* (roles move within `dave/skills/dave/`, no relocation).
+
 ### Phase 2 — unify distribution without changing public skill identities
 
 **Priority:** P1. **Relative size:** medium. **Risk:** medium, primarily installation compatibility.
@@ -325,6 +395,8 @@ Each phase is independently reviewable. Do not mix catalog relocation, state sch
 - Reduce Pi integration to optional host setup after the universal install works.
 
 **Exit criteria:** CLI discovery returns the expected unique names; selected installs pass preflight/asset checks in copy and symlink mode; no required reference assumes a source checkout; optional integrations have a separate verified setup path. D.A.V.E.'s existing `~/.dave` state is unchanged.
+
+> **Review (Devin):** Under the flat-root alternative (§4 note) this phase shrinks to: `git mv pi-skills/<name> <name>` for the three movers + temporarily-kept two, bundle D.A.V.E. roles in place, update docs/manifests. The `dave/skills/dave` move and the 12 root moves disappear entirely. Either way, add a concrete gate: snapshot `npx skills add thesawdawg/agent-skills --list` output before and after — expected post-flatten set is 20 names (16 current + 4 of the 5 pi-skills, with sdd's disposition decided), then 17 after Phase 3 merges. That snapshot is the cheapest possible proof the distribution fix worked.
 
 ### Phase 3 — merge duplicated workflows and simplify roles
 
@@ -381,6 +453,8 @@ Each phase is independently reviewable. Do not mix catalog relocation, state sch
 | Packaging/dependency review | Inspected local skill paths, role lookup code, installer transforms, browser driver, and lockfile; checked upstream specification/CLI/API documentation. |
 
 Not performed: full D.A.V.E. suite, installation into the user's actual skill directories, browser launch/runtime QA, Codex/Ollama calls, external issue writes, security scans, public deployments, or git publication. The full D.A.V.E. suite contains Git configuration/push exercises; the selected mission tests avoid those operations. No subagents were used.
+
+> **Review (Devin):** Additional verification performed for this review: `npx skills add thesawdawg/agent-skills --list` (skills@1.6.0) — **16 skills discovered: 15 root + `dave` via `dave/skills/dave/`; zero of five `pi-skills/*`**. `npm view skill` / `npm view skills` — confirmed they are different packages (see §1 note). Upstream confirmation of `page.accessibility` removal and the `locator.ariaSnapshot()` replacement. `run.sh:576` `$(today)` call site, `doc-repo.sh` revert/clean lines, `common.sh` `PLUGIN_ROOT` derivation, `mission.sh` agent lookup, `pr-grill-me` `git diff HEAD..pr-N`, and dogfood's `: > issues.jsonl` all inspected directly — each cited claim reproduces.
 
 This is a structural and targeted correctness assessment, not a complete security audit or certification of every helper script.
 
