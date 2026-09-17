@@ -36,7 +36,7 @@ requested. Historical `app-design-output` specs remain supported inputs.
      architecture (one real feature wired UI → API → DB → deploy).
    - **Ordered tasks** with dependencies, grouped by milestone.
    - **Testing strategy** — what gets unit/integration/e2e; where
-     [`/skill:dogfood`](../../dogfood/SKILL.md) fits once a UI exists.
+     [`/skill:dogfood`](https://github.com/thesawdawg/agent-skills/blob/main/dogfood/SKILL.md) fits once a UI exists.
    - **Definition of done** per milestone.
 2. Confirm the plan and the immediate next action with the user. Offer to start
    the first slice, or to stop here.

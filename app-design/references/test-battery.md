@@ -1,6 +1,6 @@
 # Test Battery (Phase 3 — Test)
 
-> Referenced from [SKILL.md](../SKILL.md) and [existing-project.md](existing-project.md).
+> Referenced from [SKILL.md](../SKILL.md) and [existing-project.md](../SKILL.md).
 
 Run against the verified intent in `app-design-output/app-model.md`. A
 "discrepancy" is any behavior that differs from that model. Adapt to the app
@@ -26,12 +26,12 @@ Run each, with `bash`, and note errors/warnings:
 
 ## 3. Runtime exploratory QA
 
-**Web apps:** run [`/skill:dogfood`](../../dogfood/SKILL.md). Give it the running app's URL and a scope
+**Web apps:** run [`/skill:dogfood`](https://github.com/thesawdawg/agent-skills/blob/main/dogfood/SKILL.md). Give it the running app's URL and a scope
 from the core flows in `app-model.md`. It will navigate, interact, check the
 console, screenshot, and write `dogfood-output/report.md`. Pull its findings
 into triage.
 
-- Start the app first. For a local app, [dogfood's local-app-setup.md](../../dogfood/references/local-app-setup.md)
+- Start the app first. For a local app, [dogfood's local-app-setup.md](https://github.com/thesawdawg/agent-skills/blob/main/dogfood/references/local-app-setup.md)
   shows the safe pattern: throwaway DB, background server, readiness check,
   route smoke pass, then stop the server.
 
@@ -52,7 +52,7 @@ documented behavior matches actual.
 
 ## 4. Discrepancy collection
 
-For every issue record (reuse [dogfood's issue taxonomy](../../dogfood/references/issue-taxonomy.md) — severity
+For every issue record (reuse [dogfood's issue taxonomy](https://github.com/thesawdawg/agent-skills/blob/main/dogfood/references/issue-taxonomy.md) — severity
 Critical/High/Medium/Low; category Functional/Visual/Accessibility/Console/UX/
 Content, plus Build/Security/Performance for non-UI):
 

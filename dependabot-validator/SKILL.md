@@ -7,8 +7,6 @@ description: Validate dependency updates from Dependabot, Renovate, or manual ch
 
 Analyzes a Dependabot PR's dependency changes against the current project to surface breaking changes, deprecated APIs, and compatibility issues before merging.
 
-See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, and the [top-level skills index](../USE_CASES.md) — use [pr-grill-me](../pr-grill-me/SKILL.md) instead when the author specifically wants an intent interview.
-
 Uses only the four core tools (**Read, Write, Edit, Bash**) plus `git` and `curl`. No harness-specific web-search or API tool is required — changelog lookups go through package-registry HTTP APIs via `curl`, which are deterministic and need no search engine.
 
 ## Prerequisites
@@ -75,55 +73,7 @@ Then open the matching files (Read tool) and note the specific symbols, function
 
 ### 4. Research breaking changes (via curl, no search engine needed)
 
-For each package: find the source repo, confirm both versions exist, then read the release notes **strictly between `from_version` and `to_version`**. Extract fields with a small Python filter — do **not** `head` a raw registry document (it's large, field order isn't a contract, and you'll cut off exactly what you need).
-
-**Step 4a — npm: get the repo/homepage and confirm both versions exist.**
-```bash
-curl -sSL "https://registry.npmjs.org/<pkg>" | python3 -c '
-import sys, json, re
-d = json.load(sys.stdin)
-repo = re.sub(r"^git\+|\.git$", "", (d.get("repository") or {}).get("url") or "")
-print("repo:", repo or "(none)")
-print("homepage:", d.get("homepage") or "(none)")
-vs = d.get("versions", {})
-for v in ("<from_version>", "<to_version>"):
-    print(v + ":", "present" if v in vs else "MISSING from registry")
-'
-```
-
-**Step 4a — PyPI (Python):** repo/homepage and project URLs.
-```bash
-curl -sSL "https://pypi.org/pypi/<pkg>/json" | python3 -c '
-import sys, json
-d = json.load(sys.stdin)["info"]
-print("homepage:", d.get("home_page") or "(none)")
-print("project_urls:", d.get("project_urls") or {})
-'
-```
-
-**Step 4b — GitHub releases within the version range.** Once you have `<owner>/<repo>` from 4a, print only releases whose tag is in `(from_version, to_version]`, with full bodies (not truncated to a fixed length):
-```bash
-curl -sSL "https://api.github.com/repos/<owner>/<repo>/releases?per_page=100" | python3 -c '
-import sys, json, re
-frm, to = "<from_version>", "<to_version>"
-def key(t): return [int(x) for x in re.findall(r"\d+", t.lstrip("vV"))[:3]] or [0]
-data = json.load(sys.stdin)
-if isinstance(data, dict):                       # error object (rate-limited / not found)
-    print("release lookup FAILED:", data.get("message")); sys.exit()
-lo, hi = key(frm), key(to)
-hits = sorted((r for r in data if lo < key(r["tag_name"]) <= hi), key=lambda r: key(r["tag_name"]))
-for r in hits:
-    print("###", r["tag_name"]); print((r["body"] or "").strip()); print()
-if not hits:
-    print("NO releases found in range", frm, "->", to, "— try tags or CHANGELOG (Step 4c).")
-'
-```
-
-**Step 4c — fallback if the project keeps a CHANGELOG instead of GitHub Releases:**
-```bash
-curl -sSL "https://raw.githubusercontent.com/<owner>/<repo>/HEAD/CHANGELOG.md" | sed -n '1,200p'
-```
-Read the entries between the two versions.
+For each package: find the source repo, confirm both versions exist, then read the release notes **strictly between `from_version` and `to_version`**. Use the recipes in [references/registry-lookups.md](references/registry-lookups.md): npm/PyPI registry metadata for repo/homepage and version existence, GitHub releases filtered to the version range, and a CHANGELOG fallback. Extract fields with a small Python filter — do **not** `head` a raw registry document (it's large, field order isn't a contract, and you'll cut off exactly what you need).
 
 **If you cannot establish the release notes** for a package (private, moved/renamed repo, no tags, API rate-limited): ask the user for the changelog URL and `curl` it, or explicitly mark that package **"breaking-change research inconclusive"** in the report. **Do not default an un-researched package to Safe.**
 
@@ -170,64 +120,13 @@ Remove only the worktrees created by this run, using `git worktree remove` witho
 worktree for review. No local PR branch needs deletion.
 
 
-## Dependabot PR Validation Report
+## Report
 
-**PR:** #<number> — <title>
-**Base branch:** `<branch>` | **Updated packages:** <count>
+Produce the validation report using
+[references/report-template.md](references/report-template.md). Test results are
+marked passed only when run against the PR's updated deps in the worktree —
+never from a run in the current checkout. Recommendations are **MERGE SAFE**,
+**REVIEW BEFORE MERGING**, or **DO NOT MERGE**.
 
-### Package Analysis
-
-| Package | From | To | Risk | Notes |
-|---------|------|----|------|-------|
-| `<pkg>` | `x.y.z` | `a.b.c` | ✅ Safe / ⚠️ Review / ❌ Breaking | <one-line summary> |
-
-### Findings
-
-For each ⚠️ or ❌ package:
-- **What changed** in the new version that affects this project
-- **Where the project uses it** (file paths, line numbers if found)
-- **What action is needed** (no action / update call sites / add adapter / block merge)
-
-### Test Results
-✅ Passed **against the PR's updated deps (worktree)** / ⚠️ Skipped (reason — tests NOT run against the update) / ❌ Failed (summary). Never mark this ✅ from a run in the current checkout.
-
-### Peer Dependency Conflicts
-✅ None detected / ⚠️ Conflicts found (list them)
-
-### Recommendation
-
-**MERGE SAFE** — No breaking changes detected. All updates are patch/minor fixes or security patches with no API-surface impact on this codebase.
-
-— or —
-
-**REVIEW BEFORE MERGING** — These packages need attention first: (list packages + required actions)
-
-— or —
-
-**DO NOT MERGE** — Breaking changes detected that will cause failures. Required fixes listed above.
-
----
-
-## Tips for Common Ecosystems
-
-### npm / Node.js
-- Semver major bumps (1.x → 2.x) almost always have breaking changes.
-- Check `peerDependencies` changes in the updated lib's `package.json`.
-- Watch for renamed exports or CommonJS → ESM transitions.
-
-### Python
-- Check if the package dropped a Python version.
-- Watch for import-path renames (`from pkg import OldClass` → `from pkg.new import OldClass`).
-- Review type-annotation changes if the project uses mypy/pyright.
-
-### Rust
-- Check whether public trait implementations changed (method signatures, added required methods).
-- Feature-flag changes can silently remove functionality.
-
-### Go
-- Module-path changes mean all imports must be updated.
-- Interface changes break any code that implements or accepts the interface.
-
-### Java
-- Check for removed annotations or changed annotation parameters.
-- Spring Boot / Jakarta EE namespace migrations are common breaking points.
+Ecosystem-specific breaking-change patterns live in
+[references/ecosystem-tips.md](references/ecosystem-tips.md).

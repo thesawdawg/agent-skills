@@ -1,6 +1,5 @@
 ---
 description: "D.A.V.E. orients you — current focus, what's in Now, what's stale, what's parked"
-argument-hint: "[optional: a question, e.g. 'what should I start?']"
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "Task", "AskUserQuestion"]
 ---
 

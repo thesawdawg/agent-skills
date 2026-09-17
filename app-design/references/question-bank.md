@@ -1,6 +1,6 @@
 # Question Bank
 
-> Referenced from [SKILL.md](../SKILL.md), [existing-project.md](existing-project.md), and [spec-and-plan.md](spec-and-plan.md).
+> Referenced from [SKILL.md](../SKILL.md), [existing-project.md](../SKILL.md), and [spec-and-plan.md](https://github.com/thesawdawg/agent-skills/blob/main/constructor/references/spec-and-plan.md).
 
 Wording to draw from when interviewing the user. Pick the ones that resolve a
 real decision — don't ask them all. Ask **2–4 at a time, numbered, as plain
@@ -45,7 +45,7 @@ Example of how to ask:
 
 ## Spec & plan (post-chain)
 
-Only for the [spec-and-plan](spec-and-plan.md) step, and only for gaps the
+Only for the [spec-and-plan](https://github.com/thesawdawg/agent-skills/blob/main/constructor/references/spec-and-plan.md) step, and only for gaps the
 `ideator` → `constructor` → `datasecurer` artifacts genuinely leave open. Read
 those first; re-asking what the brief already answers wastes the user's patience.
 
@@ -55,5 +55,5 @@ those first; re-asking what the brief already answers wastes the user's patience
 - Is there a deadline or event this has to land before?
 
 **Intent and stack questions are not here.** Those belong to
-[`ideator`](../../ideator/SKILL.md) and [`constructor`](../../constructor/SKILL.md),
+[`ideator`](https://github.com/thesawdawg/agent-skills/blob/main/ideator/SKILL.md) and [`constructor`](https://github.com/thesawdawg/agent-skills/blob/main/constructor/SKILL.md),
 which own that conversation and write the artifacts this skill reads.

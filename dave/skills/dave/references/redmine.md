@@ -8,7 +8,7 @@ install. **Never assume a tool name.**
 > (`mcp({ search: "redmine issue" })`) replaces `ToolSearch`. Without it, use
 > [redmine-rest.md](redmine-rest.md) — the same operations over `curl` against
 > Redmine's REST API. Every approval rule below applies in all three cases,
-> unchanged. See [INSTALL-PI.md](../../../INSTALL-PI.md).
+> unchanged. See [INSTALL-PI.md](https://github.com/thesawdawg/agent-skills/blob/main/dave/INSTALL-PI.md).
  Discover what is actually present, once per
 session, before claiming any Redmine capability:
 

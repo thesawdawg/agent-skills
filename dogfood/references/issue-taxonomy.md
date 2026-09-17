@@ -3,7 +3,7 @@
 > Referenced from [SKILL.md](../SKILL.md).
 
 Use this taxonomy to classify issues found during dogfood QA testing. Reused
-by `app-design`'s [test battery](../../app-design/references/test-battery.md)
+by `app-design`'s [test battery](https://github.com/thesawdawg/agent-skills/blob/main/app-design/references/test-battery.md)
 for non-UI severity classification too.
 
 ## Severity Levels

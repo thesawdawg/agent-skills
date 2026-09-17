@@ -9,8 +9,6 @@ Systematic exploratory QA of a web application: navigate it, interact with it, c
 
 This skill drives a real headless Chromium instance through a small bundled Node script (`scripts/browser-driver.mjs`). One browser session stays alive across the whole pass, so pages, cookies, and console history persist. It requires filesystem access, a shell, Node/npm, and Chromium. Use a native browser tool instead when it supports the required navigation, evidence, console, and axe operations.
 
-See also: [USE_CASES.md](USE_CASES.md) for trigger phrases and a worked example, [references/local-app-setup.md](references/local-app-setup.md) for safely standing up a local target first, and the [top-level skills index](../USE_CASES.md). This skill is also called internally by `app-design`'s Mode A Test phase — see [app-design/SKILL.md](../app-design/SKILL.md). The [accessibility-audit](../accessibility-audit/SKILL.md) skill reuses this driver and its `axe` command (documented in the driver reference below).
-
 ## Setup: paths & shell state (READ THIS FIRST)
 
 Two facts about how commands run, and how this skill deals with them:
@@ -167,26 +165,9 @@ For every issue found:
    ```
 3. Tell the user the exact paths (`./dogfood-output/report.md` and the Critical/High screenshots). If your harness has a file-delivery capability, use it to surface them; otherwise the paths are enough.
 
-## Driver Command Reference
-
-| Command | Purpose |
-|---------|---------|
-| `launch` | Start the persistent headless browser (run detached; blocks until `close`) |
-| `close` | Signal the running browser to shut down |
-| `navigate --url <url>` | Go to a URL |
-| `viewport --width N --height N` | Set viewport for responsive/reflow checks |
-| `snapshot` | Print a YAML-style ARIA tree (structural evidence, not an audit) |
-| `screenshot [--path <file>] [--fullpage true]` | Plain screenshot, no annotation |
-| `annotate [--path <file>]` | Screenshot with numbered element badges + `refs.json` for `--ref` lookups |
-| `click --ref <N> \| --selector <css>` | Click an element |
-| `type --ref <N> \| --selector <css> --text <str>` | Fill a field |
-| `press --key <key>` | Press a keyboard key |
-| `scroll [--direction up\|down]` | Scroll the page |
-| `back` | Go back in browser history |
-| `console [--clear true]` | Read (and optionally clear) captured console/page errors |
-| `axe [--tags <comma-list>]` | Run an automated axe-core scan of the current page; defaults to `wcag2a,wcag2aa,wcag21aa,wcag22aa` tags. Used by the `accessibility-audit` skill; also useful for a quick a11y sanity check mid-dogfood-run. |
-
-All commands take `--state-dir ./dogfood-output/.browser` — the same directory passed to `launch`.
+The full driver command table lives in
+[references/browser-commands.md](references/browser-commands.md); every command
+takes `--state-dir ./dogfood-output/.browser`.
 
 ## Tips
 

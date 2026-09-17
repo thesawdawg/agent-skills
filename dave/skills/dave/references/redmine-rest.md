@@ -6,7 +6,7 @@ plain `curl` and nothing else.
 
 **On pi, check first whether you need this.** The `pi-mcp-adapter` extension gives
 pi real MCP support for about 200 tokens, which lets you keep the same Redmine MCP
-server you use elsewhere — see [INSTALL-PI.md](../../../INSTALL-PI.md). This file is
+server you use elsewhere — see [INSTALL-PI.md](https://github.com/thesawdawg/agent-skills/blob/main/dave/INSTALL-PI.md). This file is
 for when you'd rather not add a third-party extension, or the MCP server isn't
 available. See [redmine.md](redmine.md) for the authority model and the approval
 gate — **all of that still applies here, unchanged.** This file only replaces the

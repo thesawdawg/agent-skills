@@ -1,6 +1,5 @@
 ---
 description: "Capture a distraction without acting on it, so you can get back to it later"
-argument-hint: "<the thing you want to come back to>"
 allowed-tools: ["Bash", "Read"]
 ---
 

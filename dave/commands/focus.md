@@ -1,6 +1,5 @@
 ---
 description: "Lock D.A.V.E. onto one priority item so drift can be measured against it"
-argument-hint: "<ref or description> — e.g. RM-4471, or 'the retry bug'"
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "AskUserQuestion"]
 ---
 

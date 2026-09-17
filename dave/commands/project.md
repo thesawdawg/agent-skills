@@ -1,6 +1,5 @@
 ---
 description: "Register, inspect, or re-status a project — the container a ranked item belongs to"
-argument-hint: "[slug] · or 'add <path>' · or 'status <slug> <state>'"
 allowed-tools: ["Bash", "Read", "Glob", "Grep", "AskUserQuestion"]
 ---
 

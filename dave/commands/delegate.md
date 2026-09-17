@@ -1,6 +1,5 @@
 ---
 description: "Hand work to a roster agent — Quartermaster, Scout, Ideator, Constructor, Critic, or Scribe"
-argument-hint: "[agent] <what you want done>"
 allowed-tools: ["Bash", "Read", "Write", "Glob", "Grep", "Task", "AskUserQuestion"]
 ---
 

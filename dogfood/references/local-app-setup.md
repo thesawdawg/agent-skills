@@ -1,6 +1,6 @@
 # Local App Setup for Runtime Testing
 
-> Referenced from [SKILL.md](../SKILL.md) and [app-design's test battery](../../app-design/references/test-battery.md).
+> Referenced from [SKILL.md](../SKILL.md) and [app-design's test battery](https://github.com/thesawdawg/agent-skills/blob/main/app-design/references/test-battery.md).
 
 Safe pattern for standing up a local app so it can be exercised (by `dogfood`'s browser driver, or by `curl` for APIs) without corrupting real data or leaving orphaned processes behind.
 
@@ -18,10 +18,9 @@ Safe pattern for standing up a local app so it can be exercised (by `dogfood`'s 
 ## Applying it
 
 - **Web apps:** run this setup, then hand the ready URL to `dogfood` (see [`../SKILL.md`](../SKILL.md)) for the browser-driven pass.
-- **APIs/backends:** run this setup, then probe directly with `curl` as described in app-design's [test battery](../../app-design/references/test-battery.md), section 3.
+- **APIs/backends:** run this setup, then probe directly with `curl` as described in app-design's [test battery](https://github.com/thesawdawg/agent-skills/blob/main/app-design/references/test-battery.md), section 3.
 
 ## See also
 
 - [dogfood/SKILL.md](../SKILL.md) — the workflow that consumes a running app once it's up
-- [dogfood/USE_CASES.md](../USE_CASES.md) — example invocations
-- [app-design/references/test-battery.md](../../app-design/references/test-battery.md) — where this pattern is invoked from Mode A's Test phase
+- [app-design/references/test-battery.md](https://github.com/thesawdawg/agent-skills/blob/main/app-design/references/test-battery.md) — where this pattern is invoked from Mode A's Test phase

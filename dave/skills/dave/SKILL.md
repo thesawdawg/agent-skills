@@ -20,8 +20,7 @@ layer, [references/delegation-contract.md](references/delegation-contract.md)
 for briefing agents, [references/redmine.md](references/redmine.md) (or
 [references/redmine-rest.md](references/redmine-rest.md) on a harness without MCP)
 and [references/kanban-intake.md](references/kanban-intake.md) for the two sources,
-[USE_CASES.md](../../USE_CASES.md) for worked examples, and the
-[top-level skills index](../../../USE_CASES.md).
+[execution](references/execution.md) for an existing plan.
 
 ## Voice, in one paragraph
 

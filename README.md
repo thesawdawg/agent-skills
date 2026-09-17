@@ -1,89 +1,69 @@
-# agent-skills
+# Agent skills
 
-Personal collection of [Agent Skills](https://code.claude.com/docs/en/skills) for
-Claude Code, [pi](https://pi.dev), and any harness that reads a `SKILL.md` —
-plus **D.A.V.E.**, an orchestrator plugin that sits above them.
-
-There is no build and no runtime. Each directory is an independently-triggered
-skill: the harness reads its `SKILL.md` frontmatter and loads it when a request
-matches. [`USE_CASES.md`](USE_CASES.md) is the chooser.
-
-## What's here
-
-| | |
-|---|---|
-| **13 skills** | Idea-to-architecture chain, codebase audit, browser QA, WCAG audit, model delegation, PR and dependency review, docs sync |
-| **1 plugin** | [`dave/`](dave/README.md) — priority orchestration with a nine-agent roster, `/dave:*` commands and a session hook |
-| **3 conventions** | [`coding-style`](coding-style/), [`workflow-rules`](workflow-rules/), [`memory`](memory/) — read automatically, never chosen |
-| **[`pi-skills/`](pi-skills/README.md)** | Harness-portable skills written to a four-tool baseline (Read/Write/Edit/Bash) |
-
-Start at [**USE_CASES.md**](USE_CASES.md) — it maps intent to skill and explains
-how they chain. [STRUCTURE.md](STRUCTURE.md) documents the layout rules.
+A selectively installable collection of workflows and conventions. Some skills
+bundle executable helpers; prerequisites are declared in each skill. Installing a
+skill does not register plugin agents, hooks, commands, or always-on host rules.
 
 ## Install
 
-**Claude Code** — clone into the global skills directory and everything loads,
-including D.A.V.E. as `dave@skills-dir`:
+The verified installer is **`skills@1.6.0`** (plural). `npx skill install` is not
+an alias for it.
 
 ```bash
-git clone https://github.com/thesawdawg/agent-skills.git ~/.claude/skills
+npx skills@1.6.0 add thesawdawg/agent-skills --list
+npx skills@1.6.0 add thesawdawg/agent-skills -g --skill dogfood
+npx skills@1.6.0 add thesawdawg/agent-skills -g --skill dave code-review --copy
 ```
 
-Already cloned? `git -C ~/.claude/skills pull`.
+With multiple agent directories (e.g. `--agent claude-code cursor`), omitting
+`--copy` uses symlinks. Version 1.6.0 automatically copies for a single target. `--all` selects all skills/agents; use
+selective installation for a smaller catalog. For an unpublished checkout, replace
+`thesawdawg/agent-skills` with its absolute path. `npx skills@1.6.0 use --help`
+describes the CLI's opt-in skill-use workflow; it is separate from installation.
 
-**Any harness, via the skills CLI** — installs to `~/.agents/skills/` and symlinks
-into every agent it detects:
+## Catalog
 
-```bash
-npx skills add thesawdawg/agent-skills -g
-```
+| Skill | Purpose |
+|---|---|
+| [accessibility-audit](accessibility-audit/SKILL.md) | WCAG criteria, axe evidence, and manual accessibility checks; requires dogfood or equivalent browser capability. |
+| [app-design](app-design/SKILL.md) | Assess an existing repository and prioritize verified improvements. |
+| [cloudflare-temporary-deploy](cloudflare-temporary-deploy/SKILL.md) | Prepare and verify an explicitly authorized public Worker preview. |
+| [code-review](code-review/SKILL.md) | Read-only review of a diff or plan, without an author interview. |
+| [codex-delegate](codex-delegate/SKILL.md) | Continuous Codex CLI session mechanics for authorized delegation. |
+| [commit-documentor](commit-documentor/SKILL.md) | Draft commit-related docs and commit only approved files locally. |
+| [constructor](constructor/SKILL.md) | Architecture, dependencies, specifications, and milestones. |
+| [datasecurer](datasecurer/SKILL.md) | Threat models, data protection, and tested recovery planning. |
+| [dave](dave/skills/dave/SKILL.md) | Optional priority/state management and plan execution; Critic reviews require code-review. |
+| [dependabot-validator](dependabot-validator/SKILL.md) | Compatibility review of Dependabot, Renovate, or manual dependency updates. |
+| [dogfood](dogfood/SKILL.md) | Evidence-backed browser QA and optional simulated persona UX. |
+| [flask-tests](flask-tests/SKILL.md) | Legacy application-specific fixtures; use only after confirming the owning app. |
+| [ideator](ideator/SKILL.md) | New-project scope and a concise project brief. |
+| [memory](memory/SKILL.md) | Optional durable memory, reusing the configured system. |
+| [ollama-delegate](ollama-delegate/SKILL.md) | Text-only Ollama invocation and bounded conversation mechanics. |
+| [pr-grill-me](pr-grill-me/SKILL.md) | Author interview checked against the actual PR diff. |
+| [rest-graphql-debug](rest-graphql-debug/SKILL.md) | Layered HTTP/GraphQL diagnosis and focused lookup recipes. |
+| [web-pentest](web-pentest/SKILL.md) | Explicitly authorized, scoped security assessment with protected evidence. |
+| [workflow-rules](workflow-rules/SKILL.md) | Advisory workflow conventions and on-demand coding style. |
 
-**pi** — copies the package into `~/.pi/skills/`, then enable what you want with
-`pi config`:
+## Migration
 
-```bash
-pi install git:github.com/thesawdawg/agent-skills
-```
+| Previous entry/path | Current owner |
+|---|---|
+| Pi API/security/deploy subdirectories | Same skill names at repository root |
+| adversarial-ux-test | dogfood persona UX reference |
+| subagent-driven-development | dave execution reference |
+| coding-style | workflow-rules style reference |
+| app-design spec/milestone templates | constructor |
+| D.A.V.E. constructor / ideator / brainstormer / module-finder | implementer / options / options / scout lookup aliases |
 
-D.A.V.E. needs more than a skill install to get his agents, commands and hook onto
-pi — see [`dave/INSTALL-PI.md`](dave/INSTALL-PI.md).
+Updates do not necessarily remove old installed entries. After reviewing your
+installed list (`npx skills@1.6.0 list -g`), reinstall the new owners. Only with your
+approval, remove superseded entries using `npx skills@1.6.0 remove coding-style
+adversarial-ux-test subagent-driven-development -g`. Source cleanup does not modify
+personal installations, host rules, or D.A.V.E. state. Flask relocation is deferred
+until its owning project is identified.
 
-**As a plugin marketplace** — this repo is one:
-
-```bash
-claude plugin marketplace add ~/.claude/skills && claude plugin install dave@agent-skills
-```
-
-### Prerequisites
-
-Only what a given skill actually needs: `jq` for D.A.V.E., Node for `dogfood`'s
-browser driver and for [`archify`](https://github.com/tt-a1i/archify) (which
-D.A.V.E.'s `cartographer` uses for diagrams, installed with
-`npx skills add tt-a1i/archify -g`), the Codex CLI for `codex-delegate`, a
-reachable Ollama daemon for `ollama-delegate`.
-
-## Two name collisions worth knowing
-
-`ideator` and `constructor` exist twice, deliberately, doing different jobs:
-
-|  | Top-level skill | D.A.V.E. agent |
-|---|---|---|
-| **Ideator** | Scopes a *new project* into a brief | Generates competing approaches to a decided problem |
-| **Constructor** | Turns a brief into architecture and dependencies | Implements an already-agreed plan in existing code |
-
-The skills are a project-inception chain; the agents work mid-ticket inside a
-codebase that exists. See [`dave/skills/dave/references/delegation-contract.md`](dave/skills/dave/references/delegation-contract.md).
-
-## Contributing
-
-Skills follow the layout in [STRUCTURE.md](STRUCTURE.md): a directory named for
-the skill, a `SKILL.md` whose frontmatter `name` matches that directory, and a
-`USE_CASES.md` alongside it. Git and code conventions live in
-[`workflow-rules`](workflow-rules/SKILL.md) and [`coding-style`](coding-style/SKILL.md) —
-they apply here too.
-
-## License
-
-[MIT](LICENSE). The `pi-skills/` collection includes work adapted from
-[NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) (MIT);
-per-file attribution is in [`pi-skills/README.md`](pi-skills/README.md).
+[Optional D.A.V.E. integrations](dave/README.md) are configured separately.
+[Authoring and verification](STRUCTURE.md) describes `bash scripts/verify.sh`.
+The [cleanup plan](CLEANUP-PLAN.md) records decisions and validation limits.
+MIT license: [LICENSE](LICENSE); adapted bundles carry their own upstream NOTICE.

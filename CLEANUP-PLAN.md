@@ -536,3 +536,58 @@ Repository evidence is linked throughout. External documentation was checked on 
   manifests, and requires reproducible before/after tests or an inconclusive result.
 - Documentation link/catalog consolidation follows in Phase 4; links to merged
   chooser material are not yet considered final validation results.
+
+### Phase 4 documentation and ongoing checks
+
+- Removed the root and per-skill chooser layer (USE_CASES.md files, the Pi
+  chooser, duplicate delegation READMEs) and retired the completed D.A.V.E.
+  implementation plan. Frontmatter descriptions now own selection; worked
+  examples folded into skill references.
+- Preserved the Pi authoring guidance nearly verbatim as
+  `docs/authoring-portability.md`, generalized to capabilities rather than a
+  specific harness. STRUCTURE.md is the authoring/verification guide; AGENTS.md
+  gives agents the short version.
+- README rebuilt as a generated catalog table over the 19 live entries with the
+  verified installer (`skills@1.6.0`), selective-install flags, a
+  previous-name → owner migration table, and explicit notes that installing a
+  skill registers no agents, hooks, or rules and touches no installed copies.
+- Added `scripts/verify.sh` as the single verification entry: frontmatter and
+  catalog validation, retired-path and broken-link checks, per-bundle MIT
+  notice checks, pinned-CLI discovery snapshot against
+  `tests/discovery-expected.txt`, real copy/symlink selected installs
+  (38 exercises, including D.A.V.E. mission pack and the accessibility-audit
+  preflight failure), `bash -n` plus ShellCheck at warning severity, driver
+  syntax check, `--selftest` handler discovery, skill preflight aggregation,
+  helper regression tests, the fixture-failure sentinel, and the D.A.V.E. suite
+  with its push exercise skipped (`DAVE_TEST_SKIP_SYNC=1`).
+  `VERIFY_BROWSER=1` adds the locked-runtime browser fixture; CI-only because
+  Chromium cannot launch under this workspace's process sandbox.
+- Two defects found while building the suite: the selftest discovery grep
+  initially matched `verify.sh` itself and would have recursed — discovery now
+  requires a flag *handler* (`--selftest)` case arm / argv test) and fails on an
+  empty result; CLI 1.6.0 symlink mode silently copies for a single `--agent`,
+  so the installer test passes two agents to exercise real symlinks.
+- Lookup content split from primary workflows into `references/` (dogfood
+  driver command table; dependabot-validator registry recipes, report template,
+  and ecosystem tips; commit-documentor doc-index setup). `dave`, `datasecurer`,
+  and `web-pentest` remain above the 150-line guidance as workflow-dense or
+  safety-critical bodies — the warning is retained rather than hiding guards.
+
+### Phase 5 additions landed
+
+- `code-review` owns the extracted Critic review method as a standalone
+  read-only entry; D.A.V.E.'s critic requires it for reviews only.
+- Browser driver gained viewport control, stale-ref invalidation, exclusive
+  launch ownership, and signal cleanup — no second backend.
+- Dependency validation covers manual/Renovate updates with merge-base
+  comparison and inconclusive results; no additional validator entry.
+
+### Remaining / deferred
+
+- Browser fixture is written but unexercised here; run
+  `VERIFY_BROWSER=1 bash scripts/verify.sh` on a host where Chromium can launch.
+- Flask relocation deferred until its owning project is identified; the entry
+  carries a deprecation note and a negative trigger fixture.
+- Installed personal copies of superseded entries are untouched; README's
+  migration section lists the user-approved removal command.
+- Release tagging remains a manual maintainer action after verification.
