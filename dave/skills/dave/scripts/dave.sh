@@ -41,7 +41,7 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
   init                      create the state tree from templates (idempotent)
   migrate                   bring an older state tree up to the current schema
   home                      print the state directory path
-  config                    print config.json          (exit 3 if not set up)
+  config [--global|--project] print the effective config (default), or one layer
   state                     print state.json
 
  orientation
@@ -58,6 +58,10 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
   project of <ref>          which project owns a ref
   project resolve [path]    which project a directory belongs to (silent if none)
   project touch [slug]      stamp last activity
+  project home [path]       the .<slug>-dave instance a directory belongs to (silent if none)
+  project spawn [path]      create a .<slug>-dave instance beside a project
+                            [--goal --cadence --status --visibility local|committed
+                             --enable-role R --set <jq-path>=<json> --force]
   scan [slug]               git state across projects  [--json] [--fresh] [--all]
 
  tracking
@@ -81,7 +85,7 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
   drift events [--days N]   what drift has looked like lately
 
  capture
-  park <text>               capture a detour without acting on it
+  park <text>               capture a detour without acting on it  [--local]
   parked                    list open parked items
   log <text>                append a timestamped line to today's log
   today                     print today's log

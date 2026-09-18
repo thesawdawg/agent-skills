@@ -36,6 +36,48 @@ SCAN_CACHE="$DAVE_HOME/scan-cache.json"
 # Bumped when the on-disk shape changes. `require_init` exits 4 below this.
 SCHEMA_VERSION=2
 
+_canonical() { (cd "$1" 2>/dev/null && pwd -P) || printf '%s' "$1"; }
+
+# ------------------------------------------------------ project-tuned instances
+#
+# A directory can hold a `.<slug>-dave/` folder that overlays the global config
+# and adds project-only role contracts. It is deliberately not a second
+# DAVE_HOME: priorities, log, missions and the time ledger stay in ~/.dave so the
+# ranked list remains single.
+#
+# `project_home_resolve` is the discovery half: from a start directory it walks
+# up to / looking for the one directory whose name is exactly `.<slug of its own
+# basename>-dave` — self-naming, so a copied folder cannot accidentally tune a
+# different parent. Silent, exit 0 when there is none: the hook and brief call
+# this in directories that have nothing to do with D.A.V.E.
+#
+# DAVE_PROJECT_HOME overrides discovery. "none" disables it (tests and any
+# hook-free path need a way to say "there is no project here" that does not
+# depend on cwd); any other value is used verbatim and must point at a real
+# instance — a bad override is a loud error, not a silent fallback.
+project_home_resolve() {
+  if [ -n "${DAVE_PROJECT_HOME:-}" ]; then
+    [ "$DAVE_PROJECT_HOME" = "none" ] && return 0
+    [ -f "$DAVE_PROJECT_HOME/config.json" ] \
+      || die "DAVE_PROJECT_HOME has no config.json: $DAVE_PROJECT_HOME"
+    printf '%s\n' "$DAVE_PROJECT_HOME"
+    return 0
+  fi
+  local dir slug
+  dir="$(_canonical "${1:-$PWD}")"
+  [ -n "$dir" ] && [ -d "$dir" ] || return 0
+  while : ; do
+    slug="$(slugify "$(basename "$dir")")"
+    if [ -f "$dir/.$slug-dave/config.json" ]; then
+      printf '%s\n' "$dir/.$slug-dave"
+      return 0
+    fi
+    [ "$dir" = "/" ] && break
+    dir="$(dirname "$dir")"
+  done
+  return 0
+}
+
 die() { echo "dave: $*" >&2; exit 1; }
 
 need_jq() {
@@ -145,15 +187,52 @@ json_get() {
   if [ -n "$v" ]; then printf '%s\n' "$v"; else printf '%s\n' "$dflt"; fi
 }
 
-config_get() { json_get "$CONFIG" "$1" "${2:-}"; }
+# ------------------------------------------------------------- effective config
+#
+# With a project instance present, reads see global config overlaid by the
+# project's config.json: `jq .[0] * .[1]` deep-merges, so the overlay only needs
+# the leaf it changes and inherits everything else. `_comment*` keys are
+# documentation for hand-editers, not settings — they are stripped at every
+# level so `config` never prints them.
+#
+# The merge is materialized once into a temp file and cached for the rest of
+# the process. Writers (sync setup, spawn --set) must keep writing the real
+# file — config_get is the only reader redirected here.
+_DAVE_TMP_FILES=()
+_dave_cleanup_tmp() { [ "${#_DAVE_TMP_FILES[@]}" -gt 0 ] && rm -f "${_DAVE_TMP_FILES[@]}"; return 0; }
+
+_EFFECTIVE_CONFIG=""
+config_effective_file() {
+  [ -n "$_EFFECTIVE_CONFIG" ] && { printf '%s\n' "$_EFFECTIVE_CONFIG"; return 0; }
+  if [ -z "$PROJECT_HOME" ] || [ ! -f "$PROJECT_CONFIG" ] || [ ! -f "$CONFIG" ]; then
+    _EFFECTIVE_CONFIG="$CONFIG"
+  else
+    _EFFECTIVE_CONFIG="$(mktemp "${TMPDIR:-/tmp}/dave-effective.XXXXXX")"
+    _DAVE_TMP_FILES+=("$_EFFECTIVE_CONFIG")
+    # Clean up only when nobody else owns EXIT — appending to a foreign trap
+    # risks mangling its quoting, and a leftover mktemp file is harmless.
+    [ -z "$(trap -p EXIT)" ] && trap '_dave_cleanup_tmp' EXIT
+    if ! jq -s '.[0] * .[1]
+                | walk(if type == "object"
+                       then with_entries(select(.key | startswith("_comment") | not))
+                       else . end)' "$CONFIG" "$PROJECT_CONFIG" > "$_EFFECTIVE_CONFIG"; then
+      # A corrupt overlay must degrade to the global config, not to empty reads.
+      rm -f "$_EFFECTIVE_CONFIG"
+      _EFFECTIVE_CONFIG="$CONFIG"
+    fi
+  fi
+  printf '%s\n' "$_EFFECTIVE_CONFIG"
+}
+
+config_get() { json_get "$(config_effective_file)" "$1" "${2:-}"; }
 
 # Booleans need their own reader: jq's `//` yields the right-hand side for `false`
 # as well as null, so `.x // true` can never return false. The session-start hook
 # learned this the hard way; do not "simplify" this back into json_get.
 config_bool() {
   local path="$1" dflt="$2"
-  jq -r "if $path == null then \"$dflt\" else ($path | tostring) end" "$CONFIG" \
-    2>/dev/null || printf '%s\n' "$dflt"
+  jq -r "if $path == null then \"$dflt\" else ($path | tostring) end" \
+    "$(config_effective_file)" 2>/dev/null || printf '%s\n' "$dflt"
 }
 
 # ------------------------------------------------------------------------ git
@@ -196,3 +275,53 @@ git_probe() {
     '{path:$p, exists:true, repo:true, branch:$b, dirty:$dirty, untracked:$untracked,
       ahead:$ahead, behind:$behind, last_commit:($ts|select(. != "")), last_subject:$subj}'
 }
+
+# ------------------------------------------------------------------- markdown
+
+# One ## section of a markdown file, with HTML prompts stripped and surrounding
+# blank lines trimmed. Lives here rather than in mission.sh because both the
+# briefing pack and `brief` (the project instance's rules section) read sections.
+_md_section() {
+  local file="$1" heading="$2"
+  [ -f "$file" ] || return 0
+  # Fence-aware: an agent's return format is a fenced block whose *contents* are
+  # markdown headings, and a naive scan ends the section at the first one.
+  awk -v h="## $heading" '
+    !f && $0 == h { f = 1; next }
+    f {
+      if ($0 ~ /^```/) { fence = !fence; print; next }
+      if (!fence && $0 ~ /^## /) { f = 0; next }
+      print
+    }
+  ' "$file" \
+    | sed -e 's/<!--[^>]*-->//g' \
+    | awk 'BEGIN{n=0} {lines[n++]=$0}
+           END{ s=0; e=n-1;
+                while (s < n && lines[s] ~ /^[[:space:]]*$/) s++;
+                while (e >= s && lines[e] ~ /^[[:space:]]*$/) e--;
+                for (i = s; i <= e; i++) print lines[i] }'
+}
+
+# ------------------------------------------------- project instance, resolved
+#
+# Resolved once at source time: a dave.sh invocation is one command in one cwd,
+# so there is nothing to re-resolve. Sourced scripts that never touch a project
+# still pay only the walk-up — which is a handful of stat calls.
+# `|| exit 1` matters: die inside $( ) exits the subshell, and without it a bad
+# DAVE_PROJECT_HOME would degrade to "no project" instead of the loud error.
+PROJECT_HOME="$(project_home_resolve)" || exit 1
+if [ -n "$PROJECT_HOME" ]; then
+  PROJECT_CONFIG="$PROJECT_HOME/config.json"
+  PROJECT_PARKING="$PROJECT_HOME/scratch/parking-lot.md"
+  PROJECT_ROLES="$PROJECT_HOME/roles"
+  PROJECT_BRIEF="$PROJECT_HOME/project.md"
+else
+  PROJECT_CONFIG="" PROJECT_PARKING="" PROJECT_ROLES="" PROJECT_BRIEF=""
+fi
+
+# Prime the merged config here, in the main shell: materializing it lazily from
+# inside a command substitution would register the cleanup trap in a subshell
+# that deletes the file the moment the substitution ends.
+if [ -n "$PROJECT_HOME" ] && [ -f "$PROJECT_CONFIG" ] && [ -f "$CONFIG" ]; then
+  config_effective_file >/dev/null
+fi

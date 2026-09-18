@@ -16,6 +16,11 @@ TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DAVE="$TEST_DIR/../dave.sh"
 FILTER="${1:-}"
 
+# Instance discovery is off by default so the suite's cwd can never leak a
+# `.*-dave` overlay into unrelated tests; the project_home tests opt back in
+# per call with `env -u DAVE_PROJECT_HOME`.
+export DAVE_PROJECT_HOME=none
+
 PASS=0; FAIL=0; FAILED_NAMES=()
 
 # A fresh, isolated state tree per test.
@@ -943,6 +948,124 @@ test_sync() {
   DAVE_HOME="$keep"
 }
 
+# ------------------------------------------------------- project-tuned instances
+#
+# Discovery is disabled suite-wide via DAVE_PROJECT_HOME=none; calls that are
+# meant to see the instance opt in with `env -u DAVE_PROJECT_HOME`.
+
+test_project_home() {
+  dave init >/dev/null
+  local p; p="$(mktemp -d)/My App"   # a space, on purpose: slug must survive it
+  mkdir -p "$p/sub/dir"
+  dave project spawn "$p" --goal g --cadence weekly \
+    --enable-role security-guard --set .priorities.drift_threshold_minutes=20 >/dev/null
+
+  local dir="$p/.my-app-dave"
+  for f in config.json project.md roles/security-guard.md roles/maintenance-tech.md \
+           scratch/parking-lot.md; do
+    [ -f "$dir/$f" ] && ok "spawn creates $f" || no "spawn creates $f" "missing"
+  done
+  assert_contains "spawn registers the project" "$(dave project list)" "my-app"
+  local brief_md; brief_md="$(cat "$dir/project.md")"
+  assert_contains "project.md has the name" "$brief_md" "My App"
+  assert_contains "project.md has the goal" "$brief_md" "g"
+  assert_eq "enable-role lands in the overlay" "true" \
+    "$(jq -r '.roster."security-guard"' "$dir/config.json")"
+
+  assert_eq "project home resolves from a nested dir" "$dir" \
+    "$(cd "$p/sub/dir" && env -u DAVE_PROJECT_HOME "$DAVE" project home)"
+  assert_eq "config reads the merged overlay" "20" \
+    "$(cd "$p" && env -u DAVE_PROJECT_HOME "$DAVE" config | jq .priorities.drift_threshold_minutes)"
+  assert_eq "the global config is untouched" "45" \
+    "$(cd "$p" && env -u DAVE_PROJECT_HOME "$DAVE" config --global | jq .priorities.drift_threshold_minutes)"
+  case "$(cd "$p" && env -u DAVE_PROJECT_HOME "$DAVE" config)" in
+    *_comment*) no "merged config strips _comment keys" "leaked" ;;
+    *)          ok "merged config strips _comment keys" ;;
+  esac
+  assert_eq "unset overlay keys are inherited" "true" \
+    "$(cd "$p" && env -u DAVE_PROJECT_HOME "$DAVE" config | jq -r '.roster."oversight-reviewer"')"
+
+  local bout; bout="$(cd "$p" && env -u DAVE_PROJECT_HOME "$DAVE" brief)"
+  assert_contains "brief announces the instance" "$bout" "=== PROJECT INSTANCE ==="
+  assert_contains "brief names the project role" "$bout" "security-guard"
+
+  assert_exit "a second spawn refuses to clobber" 1 dave project spawn "$p"
+  [ -f "$p/.gitignore" ] && no "no .gitignore outside a git repo" "created" \
+                        || ok "no .gitignore outside a git repo"
+  assert_eq "DAVE_PROJECT_HOME=none disables discovery" "" \
+    "$(cd "$p" && DAVE_PROJECT_HOME=none "$DAVE" project home)"
+  assert_exit "a bad DAVE_PROJECT_HOME is a loud error" 1 \
+    env DAVE_PROJECT_HOME=/nonexistent "$DAVE" config
+
+  # A goal is prose, not sed replacement syntax: |, & and \ must survive verbatim.
+  local q; q="$(mktemp -d)/odd"; mkdir -p "$q"
+  dave project spawn "$q" --goal 'a|b & c\d' >/dev/null
+  assert_contains "project.md keeps a goal with special chars" \
+    "$(cat "$q/.odd-dave/project.md")" 'a|b & c\d'
+}
+
+test_project_home_git() {
+  dave init >/dev/null
+  local p; p="$(mktemp -d)/repo-a"; mkdir -p "$p"; git -C "$p" init -q
+  dave project spawn "$p" >/dev/null
+  dave project spawn "$p" --force >/dev/null
+  assert_eq "local visibility gitignores the instance once" "1" \
+    "$(grep -cxF '.repo-a-dave/' "$p/.gitignore")"
+
+  local q; q="$(mktemp -d)/repo-b"; mkdir -p "$q"; git -C "$q" init -q
+  dave project spawn "$q" --visibility committed >/dev/null
+  assert_eq "committed writes scratch/ into the instance .gitignore" "scratch/" \
+    "$(cat "$q/.repo-b-dave/.gitignore")"
+  [ -f "$q/.gitignore" ] && no "committed leaves the project .gitignore alone" "created" \
+                       || ok "committed leaves the project .gitignore alone"
+
+  local r; r="$(mktemp -d)/repo-c"; mkdir -p "$r"; git -C "$r" init -q
+  assert_exit "committed refuses personal keys" 1 \
+    dave project spawn "$r" --visibility committed --set '.user.name="x"'
+}
+
+test_project_roles() {
+  dave init >/dev/null
+  local p; p="$(mktemp -d)/proj"; mkdir -p "$p"
+  dave project spawn "$p" --enable-role security-guard >/dev/null
+  dave mission new t >/dev/null
+
+  assert_contains "a project role packs inside the instance" \
+    "$(cd "$p" && env -u DAVE_PROJECT_HOME "$DAVE" mission pack t --agent security-guard)" \
+    "Authorized?"
+  assert_contains "canonical roles still resolve" \
+    "$(cd "$p" && env -u DAVE_PROJECT_HOME "$DAVE" mission pack t --agent critic)" \
+    "Return format"
+
+  local elsewhere; elsewhere="$(mktemp -d)"
+  local rc=0
+  (cd "$elsewhere" && env -u DAVE_PROJECT_HOME "$DAVE" mission pack t --agent security-guard) \
+    >/dev/null 2>&1 || rc=$?
+  assert_eq "project roles do not leak outside the instance" "1" "$rc"
+}
+
+test_park_local() {
+  dave init >/dev/null
+  local p; p="$(mktemp -d)/proj"; mkdir -p "$p"
+  dave project spawn "$p" >/dev/null
+
+  (cd "$p" && env -u DAVE_PROJECT_HOME "$DAVE" park "x" --local) >/dev/null
+  assert_contains "--local lands in the instance lot" \
+    "$(cat "$p/.proj-dave/scratch/parking-lot.md")" "x"
+  assert_eq "and not in the global lot" "0" \
+    "$(grep -c '^- \[ \]' "$DAVE_HOME/parking-lot.md" || true)"
+  assert_contains "parked shows the local section" \
+    "$(cd "$p" && env -u DAVE_PROJECT_HOME "$DAVE" parked)" "--- project-local ---"
+
+  (cd "$p" && env -u DAVE_PROJECT_HOME "$DAVE" park "y") >/dev/null
+  assert_contains "plain park still goes global" "$(cat "$DAVE_HOME/parking-lot.md")" "y"
+
+  local elsewhere; elsewhere="$(mktemp -d)"
+  local rc=0
+  (cd "$elsewhere" && env -u DAVE_PROJECT_HOME "$DAVE" park z --local) >/dev/null 2>&1 || rc=$?
+  assert_eq "park --local outside an instance fails" "1" "$rc"
+}
+
 test_help() {
   local out; out="$(dave help)"
   for c in init migrate brief focus drift park log standup mission intake project \
@@ -961,6 +1084,7 @@ for t in init init_idempotent not_set_up_exits_3 migrate focus drift journal \
          hook_schema_note brief focus_stack time_ledger time_open_cap \
          drift_events next promise scan brief_phase_b \
          mission_ledger mission_legacy mission_pack dossier \
+         project_home project_home_git project_roles park_local \
          review_empty review_cadence review_findings review_owed review_drift \
          helpers git_probe sync help; do
   run_test "$t"

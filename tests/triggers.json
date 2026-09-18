@@ -7,6 +7,7 @@
   {"prompt":"Find UX friction for a new keyboard-only user on this preview.","expected":["dogfood"],"avoid":["web-pentest"]},
   {"prompt":"Audit this app against WCAG 2.2 AA.","expected":["accessibility-audit"],"avoid":["web-pentest"]},
   {"prompt":"Turn this approved architecture into specifications and milestones.","expected":["constructor"],"avoid":["app-design","ideator"]},
+  {"prompt":"Set up a project-tuned dave for this repo.","expected":["dave"],"avoid":["ideator","constructor"]},
   {"prompt":"What is 7 times 8?","expected":[],"avoid":["dave","workflow-rules"]},
   {"prompt":"Add a test to this unrelated Django application.","expected":[],"avoid":["flask-tests"]}
 ]

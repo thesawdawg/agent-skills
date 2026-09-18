@@ -113,3 +113,77 @@ missions opened against it.
 because a per-project ranking would let three projects each hold a number-one item
 and quietly reintroduce the problem D.A.V.E. exists to solve — several lists, none
 of them the list.
+
+## Project-tuned instances
+
+A project can carry a `.<slug>-dave/` directory that tunes the *globally
+installed* D.A.V.E. for that directory tree. `slug` is `slugify` of the
+directory's basename, so the folder names its own owner:
+
+```
+<project>/.<slug>-dave/
+  config.json      overlay onto ~/.dave/config.json
+  project.md       the project brief: goal, scope, sources, rules
+  roles/           project-only role contracts
+  scratch/         parking-lot.md — the local lot (gitignored when committed)
+  .gitignore       only for committed visibility; contains `scratch/`
+```
+
+It is an overlay plus a local scratch pad, not a second DAVE_HOME.
+
+### The merge
+
+Reads see `global * overlay`, deep-merged — the overlay needs only the leaf it
+changes and inherits everything else. `_comment*` keys are documentation for
+hand-editers and are stripped at every level. `dave.sh config` prints the merged
+result; `--global` and `--project` print one layer each. Nothing ever writes to
+the merged view: writers always touch the file they mean.
+
+### Discovery
+
+`dave.sh project home` walks up from a directory to `/` and reports the first
+exactly self-named instance — `.<slug of the directory's own basename>-dave`,
+never a glob of `.*-dave`. Silent, exit 0 when none, for the same reason
+`project resolve` is: the hook and `brief` call it everywhere.
+`DAVE_PROJECT_HOME` overrides discovery outright — set to a path it is used
+verbatim (and must contain a `config.json`), set to `none` it disables
+instances entirely.
+
+### Roles
+
+Role contracts resolve in order: `DAVE_AGENTS_DIR`, the instance's `roles/`,
+then the bundled `references/roles/`. A project can therefore add a role
+D.A.V.E. has never heard of, or shadow a canonical one, without touching the
+global install. Spawn ships two project-only roles, both disabled until enabled
+in the overlay `roster`:
+
+- `security-guard` — gates what is about to run, land, or leave the project;
+  returns `BLOCK` when the session must stop and the user must be told.
+- `maintenance-tech` — keeps the project's own artifacts from rotting;
+  proposes, never edits.
+
+### Visibility
+
+`local` (default) is private tuning: the whole instance directory is added to
+the project's `.gitignore`. `committed` travels with the repository — and for
+that reason the overlay may contain no personal or device keys (`.user`,
+`.redmine.my_user_id`, `.sync`, `.hooks`); spawn refuses ones that do, and
+writes `scratch/` into the instance's own `.gitignore` so the lot stays local.
+
+### Spawning
+
+```bash
+dave.sh project spawn ~/Projects/webcrawler --goal "crawl politely" \
+  --enable-role security-guard --set .priorities.drift_threshold_minutes=20
+```
+
+Spawn registers the project if it is not already (an instance without a
+registry entry would tune a project D.A.V.E. does not know exists) and **never
+overwrites**: an existing instance refuses without `--force`, and `--force`
+only completes a partial spawn — a user's edits to `config.json` or
+`project.md` are the point of the instance, not something to reset.
+
+Everything ranked, logged, assigned or timed stays in `~/.dave`, and that is
+the same decision as the rest of the project layer: the instance changes *how*
+D.A.V.E. behaves here, never *where the list lives* — per-project state would
+reintroduce the several-lists problem this layer exists to avoid.

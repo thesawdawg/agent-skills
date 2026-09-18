@@ -15,10 +15,25 @@
 
 MISSION_VERDICTS="trust partial rerun discard"
 
-# Role contracts are bundled with the skill; hosts may explicitly override them.
-_agents_dir() {
-  if [ -n "${DAVE_AGENTS_DIR:-}" ]; then printf '%s\n' "$DAVE_AGENTS_DIR"; return 0; fi
+# Role contracts resolve along a chain: a host override first, then the project
+# instance's own roles, then the bundled canonical set. The order is the feature
+# — a project can add a role D.A.V.E. has never heard of, or shadow a canonical
+# one, without touching the global install.
+_role_dirs() {
+  # if-blocks, not `&&` one-liners: under set -e a false test in the middle of a
+  # function is fine only while it stays the last command on its line.
+  if [ -n "${DAVE_AGENTS_DIR:-}" ]; then printf '%s\n' "$DAVE_AGENTS_DIR"; fi
+  if [ -n "${PROJECT_HOME:-}" ]; then printf '%s\n' "$PROJECT_ROLES"; fi
   printf '%s\n' "$SCRIPT_DIR/../references/roles"
+}
+
+_role_file() {
+  local name; name="$(_role_name "$1")"
+  local d
+  while IFS= read -r d; do
+    [ -f "$d/$name.md" ] && { printf '%s\n' "$d/$name.md"; return 0; }
+  done < <(_role_dirs)
+  return 1
 }
 
 # Preserve stored identifiers without rewriting mission history.
@@ -54,30 +69,9 @@ _mission_meta() {
 }
 
 # --------------------------------------------------------------- markdown bits
-
-# One section of a mission brief, with the template's HTML prompts stripped and
-# surrounding blank lines trimmed. Empty output means the section was never
-# filled in — which is a briefing error worth naming, not a section worth sending.
-_md_section() {
-  local file="$1" heading="$2"
-  [ -f "$file" ] || return 0
-  # Fence-aware: an agent's return format is a fenced block whose *contents* are
-  # markdown headings, and a naive scan ends the section at the first one.
-  awk -v h="## $heading" '
-    !f && $0 == h { f = 1; next }
-    f {
-      if ($0 ~ /^```/) { fence = !fence; print; next }
-      if (!fence && $0 ~ /^## /) { f = 0; next }
-      print
-    }
-  ' "$file" \
-    | sed -e 's/<!--[^>]*-->//g' \
-    | awk 'BEGIN{n=0} {lines[n++]=$0}
-           END{ s=0; e=n-1;
-                while (s < n && lines[s] ~ /^[[:space:]]*$/) s++;
-                while (e >= s && lines[e] ~ /^[[:space:]]*$/) e--;
-                for (i = s; i <= e; i++) print lines[i] }'
-}
+#
+# _md_section itself lives in common.sh — `brief` reads the project instance's
+# rules section with it too.
 
 # A section holding nothing but the template's own skeleton — an unticked `- [ ]`
 # with no text after it — is empty. Counting it as filled would silence exactly
@@ -401,8 +395,11 @@ _mission_pack() {
   project="$(printf '%s' "$meta" | jq -r '.project // ""')"
   ref="$(printf '%s' "$meta" | jq -r '.ref // ""')"
 
-  local agent_file; agent_file="$(_agents_dir)/$(_role_name "$agent").md"
-  [ -f "$agent_file" ] || die "no definition for agent '$agent' at $agent_file — a charge without a return contract is not a charge (set DAVE_AGENTS_DIR if they live elsewhere)"
+  local agent_file
+  if ! agent_file="$(_role_file "$agent")"; then
+    local searched; searched="$(_role_dirs | paste -sd', ' - 2>/dev/null || _role_dirs | tr '\n' ' ')"
+    die "no definition for agent '$agent' (searched: $searched) — a charge without a return contract is not a charge (set DAVE_AGENTS_DIR if they live elsewhere)"
+  fi
   local return_format; return_format="$(_md_section "$agent_file" "Return format")"
   [ -n "$(printf '%s' "$return_format" | tr -d '[:space:]')" ] \
     || die "$agent's definition has no '## Return format' section — refusing to brief without one"

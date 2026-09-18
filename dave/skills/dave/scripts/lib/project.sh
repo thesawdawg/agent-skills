@@ -36,7 +36,8 @@ _projects_all() {
   jq -s 'map(select(type == "object"))' "${files[@]}" 2>/dev/null || printf '[]\n'
 }
 
-_canonical() { (cd "$1" 2>/dev/null && pwd -P) || printf '%s' "$1"; }
+# _canonical lives in common.sh — project_home_resolve needs it before this
+# file is sourced.
 
 cmd_project() {
   require_init
@@ -53,7 +54,9 @@ cmd_project() {
     of)       _project_of "$@" ;;
     resolve)  _project_resolve "$@" ;;
     touch)    _project_touch "$@" ;;
-    *) die "unknown project subcommand: $sub (add|list|show|status|link|unlink|of|resolve|touch)" ;;
+    home)     project_home_resolve "${1:-$PWD}" ;;
+    spawn)    _project_spawn "$@" ;;
+    *) die "unknown project subcommand: $sub (add|list|show|status|link|unlink|of|resolve|touch|home|spawn)" ;;
   esac
 }
 
@@ -477,4 +480,146 @@ cmd_dossier() {
     get) _dossier_get "$@" ;;
     *) die "unknown dossier subcommand: $sub (set|get)" ;;
   esac
+}
+
+# ------------------------------------------------------------- tuned instances
+#
+# `project spawn` creates the `.<slug>-dave/` overlay beside a project. It never
+# overwrites: an existing instance dies without --force, and --force only fills
+# in what is missing — a user's edits to config.json or project.md are the
+# point of the instance, not something to reset.
+
+_project_parking_header() {
+  printf '# Parking Lot\n\nCaptured detours, deferred ideas, and anything that pulled focus off the list.\nOpen items are `- [ ]`; retired ones `- [x]`.\n\n' > "$1"
+}
+
+_project_spawn() {
+  local path="" goal="" cadence="weekly" status="active" visibility="local" force=0
+  local enable_roles=() set_exprs=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --goal)        goal="${2:-}"; shift 2 ;;
+      --cadence)     cadence="${2:-}"; shift 2 ;;
+      --status)      status="${2:-}"; shift 2 ;;
+      --visibility)  visibility="${2:-}"; shift 2 ;;
+      --enable-role) enable_roles+=("${2:-}"); shift 2 ;;
+      --set)         set_exprs+=("${2:-}"); shift 2 ;;
+      --force)       force=1; shift ;;
+      -*)            die "unknown flag: $1" ;;
+      *)             [ -z "$path" ] && path="$1" || die "unexpected argument: $1"; shift ;;
+    esac
+  done
+  [ -n "$path" ] || path="$PWD"
+  [ -d "$path" ] || die "not a directory: $path"
+  path="$(_canonical "$path")"
+  case "$visibility" in local|committed) ;; *) die "visibility must be one of: local committed" ;; esac
+
+  local name slug dir
+  name="$(basename "$path")"
+  slug="$(slugify "$name")"
+  dir="$path/.$slug-dave"
+
+  # Refuse before registering: a doomed re-spawn must not leave a registry
+  # entry behind as its side effect.
+  if [ -d "$dir" ] && [ "$force" -eq 0 ]; then
+    die "already spawned: $dir (use --force to complete a partial spawn)"
+  fi
+
+  # Registration is part of spawning: an instance without a registry entry would
+  # tune a project D.A.V.E. does not know exists. Already-registered is fine —
+  # and its goal is the default for project.md.
+  local reg
+  reg="$(_projects_all | jq -r --arg p "$path" '.[] | select(.path == $p) | .slug' | head -1)"
+  if [ -n "$reg" ]; then
+    [ -n "$goal" ] || goal="$(json_get "$(_project_file "$reg")" '.goal')"
+  else
+    _project_add "$path" --name "$name" --slug "$slug" \
+      --cadence "$cadence" --goal "$goal" --status "$status" >/dev/null
+  fi
+
+  mkdir -p "$dir/roles" "$dir/scratch"
+
+  local created=() f
+  if [ ! -f "$dir/config.json" ]; then
+    cp "$TEMPLATES/project-config-template.json" "$dir/config.json"
+    json_edit "$dir/config.json" --arg n "$name" --arg s "$slug" \
+      --arg v "$visibility" --arg d "$(today)" \
+      '.project = {name:$n, slug:$s, visibility:$v, spawned:$d}'
+    created+=("$dir/config.json")
+  fi
+  if [ ! -f "$dir/project.md" ]; then
+    # Parameter expansion, not sed: a goal or path containing |, & or \ is
+    # literal text, and sed would read it as replacement syntax. The quotes
+    # around each replacement are load-bearing — with patsub_replacement on
+    # (bash >= 5.2), an unquoted & expands to the matched text.
+    local tpl
+    tpl="$(cat "$TEMPLATES/project-template.md")"
+    tpl="${tpl//\{\{NAME\}\}/"$name"}"
+    tpl="${tpl//\{\{GOAL\}\}/"$goal"}"
+    tpl="${tpl//\{\{PATH\}\}/"$path"}"
+    printf '%s\n' "$tpl" > "$dir/project.md"
+    created+=("$dir/project.md")
+  fi
+  for f in "$TEMPLATES/project-roles"/*.md; do
+    [ -f "$f" ] || continue
+    if [ ! -f "$dir/roles/$(basename "$f")" ]; then
+      cp "$f" "$dir/roles/$(basename "$f")"
+      created+=("$dir/roles/$(basename "$f")")
+    fi
+  done
+  if [ ! -f "$dir/scratch/parking-lot.md" ]; then
+    _project_parking_header "$dir/scratch/parking-lot.md"
+    created+=("$dir/scratch/parking-lot.md")
+  fi
+
+  # --enable-role admits project roles (just copied) and canonical roles alike;
+  # anything else is a typo that would sit silently inert in the roster.
+  local r
+  for r in ${enable_roles:+"${enable_roles[@]}"}; do
+    if [ ! -f "$dir/roles/$r.md" ] && [ ! -f "$SCRIPT_DIR/../references/roles/$r.md" ]; then
+      die "no such role: $r (project roles in $dir/roles, or a canonical role name)"
+    fi
+    json_edit "$dir/config.json" --arg r "$r" '.roster[$r] = true'
+  done
+
+  local expr jpath jval
+  for expr in ${set_exprs:+"${set_exprs[@]}"}; do
+    case "$expr" in
+      *=*) jpath="${expr%%=*}"; jval="${expr#*=}" ;;
+      *)   die "--set needs <jq-path>=<json>, got: $expr" ;;
+    esac
+    printf '%s' "$jval" | jq -e . >/dev/null 2>&1 || die "invalid JSON in --set: $jval"
+    json_edit "$dir/config.json" --argjson v "$jval" "$jpath = \$v"
+  done
+
+  if [ "$visibility" = "committed" ]; then
+    # A committed overlay must carry nothing per-user or per-device: those keys
+    # belong to whoever owns ~/.dave, not to the repository.
+    local offenders
+    offenders="$(jq -r '[
+        (if has("user")   then ".user"              else empty end),
+        (if ((.redmine.my_user_id // "") != "") then ".redmine.my_user_id" else empty end),
+        (if has("sync")   then ".sync"              else empty end),
+        (if has("hooks")  then ".hooks"             else empty end)
+      ] | join(", ")' "$dir/config.json")"
+    [ -z "$offenders" ] \
+      || die "committed instances cannot set personal/device keys: $offenders"
+    if [ ! -f "$dir/.gitignore" ]; then
+      printf 'scratch/\n' > "$dir/.gitignore"
+      created+=("$dir/.gitignore")
+    fi
+  elif git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    # local is the default because most instances are private tuning; the whole
+    # directory drops out of the project's own git status.
+    local gi_line=".$slug-dave/" gi_file="$path/.gitignore"
+    if [ -f "$gi_file" ]; then
+      grep -qxF "$gi_line" "$gi_file" || printf '%s\n' "$gi_line" >> "$gi_file"
+    else
+      printf '%s\n' "$gi_line" > "$gi_file"
+    fi
+  fi
+
+  printf '%s\n' "$dir"
+  local c
+  for c in ${created:+"${created[@]}"}; do printf '%s\n' "$c"; done
 }

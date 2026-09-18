@@ -70,6 +70,14 @@ if [ -x "$DAVE_SH" ]; then
       fi
     fi
   fi
+
+  # A `.<slug>-dave/` instance tunes the global install for this directory;
+  # discovery is silent and exit 0 when there is none, exactly like resolve.
+  phome="$(cd "${CLAUDE_PROJECT_DIR:-$PWD}" 2>/dev/null && "$DAVE_SH" project home 2>/dev/null)" || true
+  if [ -n "${phome:-}" ]; then
+    pline="Project instance: ${phome} — read project.md there before acting as D.A.V.E."
+    project_block="${project_block:+${project_block}$'\n'}${pline}"
+  fi
 fi
 
 focus_line="(none set)"

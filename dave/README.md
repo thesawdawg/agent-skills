@@ -1,8 +1,10 @@
 # D.A.V.E. optional integrations
 
 Install the portable `dave` skill using the root [catalog](../README.md). It
-contains state scripts, templates, references, and seven role contracts. State
+contains state scripts, templates, references, and eight role contracts. State
 remains in `~/.dave`; migration does not rewrite existing missions or config.
+`/dave:spawn` creates a project-tuned `.<slug>-dave/` instance beside a
+repository — see [projects](skills/dave/references/projects.md).
 
 The Claude plugin provides commands, a session hook, and thin role wrappers.
 Installing the skill alone does not register those integrations. The plugin

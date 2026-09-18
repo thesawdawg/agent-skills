@@ -75,7 +75,7 @@
     "branch": "main"
   },
 
-  "_comment_roster": "Which specialist agents D.A.V.E. may delegate to. Remove any you don't want him reaching for.",
+  "_comment_roster": "Which specialist agents D.A.V.E. may delegate to. Remove any you don't want him reaching for. Project instances may add their own roles under .<slug>-dave/roles/ and enable them in that instance's overlay roster.",
   "_comment_models": "Which model each agent runs on. Overrides the agent's own default; an explicit model on a single call overrides this. haiku for mechanical transformation, sonnet for structured analysis, opus where depth decides correctness. Set \"inherit\" to use the main session's model.",
   "models": {
     "quartermaster": "sonnet",
@@ -86,7 +86,8 @@
     "module-finder": "sonnet",
     "constructor": "opus",
     "critic": "opus",
-    "scribe": "haiku"
+    "scribe": "haiku",
+    "oversight-reviewer": "haiku"
   },
 
   "roster": {
@@ -98,6 +99,7 @@
     "module-finder": true,
     "constructor": true,
     "critic": true,
-    "scribe": true
+    "scribe": true,
+    "oversight-reviewer": true
   }
 }

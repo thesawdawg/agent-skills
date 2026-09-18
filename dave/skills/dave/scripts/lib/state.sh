@@ -49,7 +49,15 @@ cmd_home() { echo "$DAVE_HOME"; }
 
 cmd_config() {
   require_init
-  cat "$CONFIG"
+  need_jq
+  case "${1:-}" in
+    --global)  cat "$CONFIG" ;;
+    --project) [ -n "$PROJECT_HOME" ] \
+                 || die "no project instance here (try: project spawn)"
+               cat "$PROJECT_CONFIG" ;;
+    "")        cat "$(config_effective_file)" ;;
+    *)         die "unknown flag: $1 (try: config [--global|--project])" ;;
+  esac
 }
 
 cmd_state() {
@@ -75,7 +83,8 @@ cmd_brief() {
     echo
   fi
   echo "=== IDENTITY ==="
-  jq -r '"user: \(.user.name // "unknown")\naddress_as: \(.user.address_as // "-")\nwork_hours: \(.user.work_hours // "-")"' "$CONFIG"
+  jq -r '"user: \(.user.name // "unknown")\naddress_as: \(.user.address_as // "-")\nwork_hours: \(.user.work_hours // "-")"' \
+    "$(config_effective_file)"
   echo
   # Project before list: orientation starts with where you are, and only then
   # with what is ranked. In an unregistered directory this stays one line.
@@ -94,6 +103,23 @@ cmd_brief() {
     _scan_cached_line "$slug"
   fi
   echo
+
+  # A project-tuned instance overlays the global config; brief says so plainly
+  # rather than letting a tuned threshold read as a changed global.
+  if [ -n "$PROJECT_HOME" ]; then
+    echo "=== PROJECT INSTANCE ==="
+    echo "$PROJECT_HOME"
+    jq -r '([keys[] | select(. != "project" and (startswith("_comment") | not))]) as $k
+           | "overrides: \(if ($k|length) == 0 then "(none)" else ($k | join(", ")) end)",
+             "project roles: \([.roster // {} | to_entries[] | select(.value == true) | .key] as $r
+                              | if ($r|length) == 0 then "(none enabled)" else ($r | join(", ")) end)"' \
+      "$PROJECT_CONFIG"
+    local rules
+    rules="$(_md_section "$PROJECT_BRIEF" "Rules for D.A.V.E. in this project" \
+             | grep -E '^[[:space:]]*[-*][[:space:]]*[^[:space:]]' || true)"
+    [ -n "$rules" ] && printf '%s\n' "$rules"
+    echo
+  fi
   echo "=== FOCUS ==="
   if [ "$(jq -r '.focus // "null"' "$STATE")" = "null" ]; then
     echo "(none set)"
@@ -151,6 +177,16 @@ cmd_brief() {
   open_parked="$(grep -c '^- \[ \]' "$PARKING" 2>/dev/null || true)"
   echo "open items: ${open_parked:-0}"
   grep '^- \[ \]' "$PARKING" 2>/dev/null | tail -5 || true
+  # The instance's own lot stays a count-and-sample like the global one; parking
+  # project-locally is for detours that mean nothing outside this directory.
+  if [ -n "$PROJECT_PARKING" ] && [ -f "$PROJECT_PARKING" ]; then
+    local local_parked
+    local_parked="$(grep -c '^- \[ \]' "$PROJECT_PARKING" 2>/dev/null || true)"
+    if [ "${local_parked:-0}" -gt 0 ]; then
+      echo "project-local open items: $local_parked"
+      grep '^- \[ \]' "$PROJECT_PARKING" 2>/dev/null | tail -5 || true
+    fi
+  fi
   echo
   echo "=== LAST INTAKE ==="
   jq -r '.last_intake // "(never — priorities may be stale)"' "$STATE"

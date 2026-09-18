@@ -1,0 +1,21 @@
+{
+  "_comment": "Overlay for one project. Only keys present here override ~/.dave/config.json; everything else is inherited. Deep-merged, so set just the leaf you want to change. Do not put personal identity or device sync settings here when this directory is committed.",
+  "project": {
+    "name": "",
+    "slug": "",
+    "visibility": "local",
+    "spawned": ""
+  },
+  "personality": {},
+  "priorities": {},
+  "redmine": {},
+  "kanban": {},
+  "roster": {
+    "security-guard": false,
+    "maintenance-tech": false
+  },
+  "models": {
+    "security-guard": "haiku",
+    "maintenance-tech": "haiku"
+  }
+}

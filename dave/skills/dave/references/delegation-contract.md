@@ -16,6 +16,12 @@ contract owns optional coordination. Text-only Ollama calls cannot edit files.
 | implementer | Implement the agreed plan | constructor |
 | critic | Evidence-backed, read-only review | — |
 | scribe | Draft work summaries and outward updates | — |
+| oversight-reviewer | Broad low-cost pass for security/maintainability concerns; routes to specialists | — |
+
+A project-tuned instance may add roles under `.<slug>-dave/roles/` — resolved
+before the bundled set — and ships `security-guard` and `maintenance-tech` as
+project-only roles, enabled via the overlay `roster`. A `BLOCK` verdict from
+security-guard halts the action and is shown to the user verbatim.
 
 Canonical contracts are in `roles/<name>.md` beside this file. Legacy identifiers
 resolve only at lookup; stored assignments are never rewritten. Honor disabled
