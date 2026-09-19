@@ -1,8 +1,40 @@
 # D.A.V.E. state storage & sync refactor — plan
 
-Status: approved 2026-09-19 (decisions below confirmed by Sawyer). Not started.
+Status: implemented on feat/dave-journal-sync (M1–M6, 2026-09-19).
 Branch: `feat/dave-journal-sync`. Existing approved plans govern scope; record
 material deviations here.
+
+## Deviations (as built vs. as planned)
+
+- **Collision suffixing on ids** (`~<dev>`): the plan left promise/assignment
+  ids to sort themselves out; two offline devices can mint the same `c<N>` /
+  `mission#<n>`. The reducer rewrites the later event's id to `<id>~<dev>` on
+  collision, so single-device ids stay clean.
+- **Legacy `.path` fallback**: `_project_path`/`_projects_all` still read a
+  `path` field from `project.json` when the local `projects.paths` map lacks
+  the slug, so pre-migration trees keep working. `migrate` strips the field.
+- **`_local_keys` in the dashboard config API**: planned as a marker of which
+  merged keys came from `.local/config.json`; implemented as a top-level
+  `"_local_keys": [...]` response field (not written to any file).
+- **ChangeWatcher → `_views_ensure`**: the dashboard now calls `dave.sh state`
+  when `journal/*.jsonl` mtimes move, so a Syncthing-delivered remote journal
+  refreshes views without waiting for a local write — the plan assumed a
+  local command would always trigger the rebuild.
+- **Journal fingerprint uses `stat %y` (nanoseconds)**, not `%Y` — same-second,
+  same-size journal edits were invisible at 1s granularity.
+- **`import.snapshot` lives in `journal/<device>-import.jsonl`**, a separate
+  file from the device's live journal (the plan implied the synthesis but not
+  the filename); its envelope `ts` is the legacy `state.json.created`.
+- **Migration archive**: `.migrated-<date>/` also collects `.git/`,
+  `.gitignore`, `scan-cache.json` (moved to `.local/` instead when absent
+  there — it's derived but expensive) and stray `*.jsonl.bak-*` files.
+- **`_config_merged` memoization**: per-process cache keyed on both config
+  files' stat fingerprints, invalidated by `json_edit` — added at review as a
+  perf fix; `config_get`/`config_bool`/`cmd_config`/`cmd_brief` call it in the
+  current shell because command substitution would drop the cache.
+- **Orphaned `park.done` ids are ignored** in the reducer (a `park.done` whose
+  id matches nothing is dropped rather than erroring — old trees can carry
+  them).
 
 ## Goal
 

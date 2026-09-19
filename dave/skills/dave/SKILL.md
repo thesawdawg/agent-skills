@@ -118,22 +118,24 @@ scripts/dave.sh standup 5             # last 5 days of log
 scripts/dave.sh mission new "sso rollout" --ref RM-4471
 scripts/dave.sh mission status        # charges asked for and not yet returned
 scripts/dave.sh intake "platform board" < board.txt
-scripts/dave.sh sync push             # commit + push state to the remote (user-run only)
-scripts/dave.sh sync status           # ahead/behind/dirty vs remote
+scripts/dave.sh sync status           # journals, view freshness, sync-conflict count
+scripts/dave.sh sync conflicts        # list *.sync-conflict-* copies left by Syncthing
 scripts/dave.sh dashboard              # local web dashboard at http://127.0.0.1:8766
 ```
 
 **Use `brief` to orient, not four separate reads** — it exists so a session start
 costs one tool call. Run `scripts/dave.sh help` for the full command list.
 
-**Cross-device.** When `sync.enabled` is set in `config.json`, `~/.dave` is a git
-repo tracking a private remote: `brief` pulls at session start, user-run `sync push` when desired publishes. `config.json` itself is gitignored and stays per-device.
-Project registrations carry absolute paths, so a device whose checkouts live
-elsewhere simply resolves those projects as unregistered — the shared refs,
-goals and cadences still travel. To onboard another machine: `init`, fill in
-`config.json`, `gh auth login` + `gh auth setup-git` (HTTPS) or register an SSH
-key, then `scripts/dave.sh sync setup <remote-url>` — a non-empty remote is
-adopted wholesale, so the new device starts from the shared state.
+**Cross-device.** `~/.dave` is a Syncthing folder: each device appends to its own
+journal in `journal/<device>.jsonl`, and structured state is folded into views
+under `.local/views/` (device-local, kept out of the synced folder by `.stignore`
+along with the rendered log/parking markdown). `scripts/dave.sh sync setup` writes `.stignore`
+and flips `.sync.enabled` in `.local/config.json`; add the folder in Syncthing
+with the same Folder ID on both devices and enable Staggered File Versioning.
+`config.json` is shared, so per-device settings — `projects.root`,
+`projects.paths` (slug → checkout path), `hooks`, `sync.*` — live in
+`.local/config.json` and override it. `sync status` shows journals, view
+freshness and `*.sync-conflict-*` counts; `sync conflicts` resolves them.
 
 ## The operating loop
 
@@ -274,6 +276,6 @@ means and why a silent `maintenance` project is not a finding.
 When work finishes or the day ends: `scripts/dave.sh standup` for the log, then
 use **Scribe** when delegation is useful and authorized for the ticket comment and time entry. Draft, show, approve,
 send — in that order, every time. Update `priorities.md` to reflect what actually
-closed, and promote from Next to fill Now. Do not invoke `scripts/dave.sh sync push`; offer it as a user-run command
-so the next device starts from what actually happened — a skipped push is the one
-way this list lies to the other machines.
+closed, and promote from Next to fill Now. There is nothing to push — Syncthing
+carries the journal to the other machines on its own, so the list cannot lie to
+them once it is written.
