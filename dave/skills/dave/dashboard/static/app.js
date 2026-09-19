@@ -45,8 +45,83 @@ function toast(msg, isError) {
   setTimeout(() => el.remove(), 5000);
 }
 
-async function act(path, payload, confirmMsg) {
-  if (confirmMsg && !window.confirm(confirmMsg)) return null;
+/* In-page modal. confirmModal() resolves true on confirm, false on cancel —
+   Esc, backdrop click, and the Cancel button all cancel; Enter confirms and
+   Tab is trapped inside the dialog. */
+function confirmModal({ title, body, details, confirmLabel, danger }) {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <h2>${esc(title)}</h2>
+        <div class="modal-body">${inline(body)}</div>
+        ${details ? `<div class="modal-details">${esc(details)}</div>` : ""}
+        <div class="modal-actions">
+          <button class="btn" data-m="cancel">Cancel</button>
+          <button class="btn ${danger ? "danger" : "primary"}" data-m="ok">${esc(confirmLabel || "Confirm")}</button>
+        </div>
+      </div>`;
+    const dialog = backdrop.querySelector(".modal");
+    const okBtn = backdrop.querySelector('[data-m="ok"]');
+    const close = (result) => {
+      document.removeEventListener("keydown", onKey, true);
+      backdrop.remove();
+      resolve(result);
+    };
+    const onKey = (ev) => {
+      if (ev.key === "Escape") { ev.preventDefault(); close(false); }
+      else if (ev.key === "Enter") { ev.preventDefault(); close(true); }
+      else if (ev.key === "Tab") {
+        const focusables = dialog.querySelectorAll("button, [href], input, select, textarea");
+        const first = focusables[0], last = focusables[focusables.length - 1];
+        if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+        else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+      }
+    };
+    backdrop.addEventListener("mousedown", (ev) => { if (ev.target === backdrop) close(false); });
+    okBtn.addEventListener("click", () => close(true));
+    backdrop.querySelector('[data-m="cancel"]').addEventListener("click", () => close(false));
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(backdrop);
+    okBtn.focus();
+  });
+}
+
+/* Info-only modal (About). Same chrome, a single Close button. */
+function infoModal(title, bodyHtml) {
+  return new Promise((resolve) => {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <h2>${esc(title)}</h2>
+        <div class="modal-body">${bodyHtml}</div>
+        <div class="modal-actions"><button class="btn primary" data-m="ok">Close</button></div>
+      </div>`;
+    const okBtn = backdrop.querySelector('[data-m="ok"]');
+    const close = () => {
+      document.removeEventListener("keydown", onKey, true);
+      backdrop.remove();
+      resolve();
+    };
+    const onKey = (ev) => {
+      if (ev.key === "Escape" || ev.key === "Enter") { ev.preventDefault(); close(); }
+      else if (ev.key === "Tab") { ev.preventDefault(); okBtn.focus(); }
+    };
+    backdrop.addEventListener("mousedown", (ev) => { if (ev.target === backdrop) close(); });
+    okBtn.addEventListener("click", close);
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(backdrop);
+    okBtn.focus();
+  });
+}
+
+async function act(path, payload, confirmSpec) {
+  if (confirmSpec) {
+    const spec = typeof confirmSpec === "string" ? { title: "Confirm", body: confirmSpec } : confirmSpec;
+    if (!await confirmModal(spec)) return null;
+  }
   try {
     const data = await apiPost(path, payload);
     toast((data.output || "done").trim());
@@ -55,6 +130,51 @@ async function act(path, payload, confirmMsg) {
     toast(e.message, true);
     return null;
   }
+}
+
+/* Sync actions, shared by the Overview card and the Sync & Config view. */
+async function syncRemoteInfo() {
+  try {
+    const cfg = await apiGet("/api/config");
+    const s = (cfg && cfg.sync) || {};
+    return { remote: s.remote || "(none configured)", branch: s.branch || "main",
+             enabled: !!s.enabled };
+  } catch (e) {
+    return { remote: "(unreadable)", branch: "main", enabled: false };
+  }
+}
+
+function wireSyncButtons(root, rerender) {
+  const pull = root.querySelector('[data-sync="pull"]');
+  const push = root.querySelector('[data-sync="push"]');
+  const statusBtn = root.querySelector('[data-sync="status"]');
+  const out = root.querySelector("#sync-out");
+  if (pull) pull.onclick = async () => {
+    const ok = await act("/api/sync", { action: "pull" }, {
+      title: "Sync pull",
+      body: "Runs `dave.sh sync pull` — rebases local state onto the remote (autostash). A conflict aborts back to a clean tree and reports.",
+      confirmLabel: "Pull",
+    });
+    if (ok) rerender();
+  };
+  if (push) push.onclick = async () => {
+    const info = await syncRemoteInfo();
+    const ok = await act("/api/sync", { action: "push" }, {
+      title: "Sync push",
+      body: "Runs `dave.sh sync push` — publishes the state tree to the remote. This is the same user-run boundary as the CLI.",
+      details: `git add -A\ncommit "sync: <host> <date>"  (if dirty)\npush → ${info.remote} (branch ${info.branch})`,
+      confirmLabel: "Push",
+      danger: true,
+    });
+    if (ok) rerender();
+  };
+  if (statusBtn) statusBtn.onclick = async () => {
+    if (out) {
+      out.textContent = "fetching…";
+      try { out.textContent = (await apiGet("/api/sync")).output; }
+      catch (e) { out.textContent = e.message; }
+    }
+  };
 }
 
 function ageOf(iso) {
@@ -231,9 +351,22 @@ async function viewOverview(main) {
   const f = o.focus;
   const overCap = secs.now.length > maxNow;
 
+  const syncCard = o.sync_enabled ? `
+    <div class="card">
+      <div class="section-title"><h2>Sync</h2>
+        <span class="hdr-spacer"></span>
+        <button class="btn small" data-sync="status">status</button>
+        <button class="btn small" data-sync="pull">pull</button>
+        <button class="btn small danger" data-sync="push">push</button>
+      </div>
+      <p class="help">~/.dave as a git repo on a private remote. Pull runs at session start; push is user-run only.</p>
+      <pre id="sync-out" class="code muted">(fetch status to see ahead/behind/dirty)</pre>
+    </div>` : "";
+
   const focusCard = `
     <div class="card">
       <div class="section-title"><h2>Focus</h2></div>
+      <p class="help">What the session is pointed at right now; drift is measured against this. Detours stack under it.</p>
       ${f ? `
         <p class="mono"><b>${esc(f.ref)}</b> — ${esc(f.label)}
           ${f.project ? ` <span class="badge blue">${esc(f.project)}</span>` : ""}
@@ -258,8 +391,15 @@ async function viewOverview(main) {
     const items = secs[name] || [];
     const cap = name === "now"
       ? ` <span class="badge ${overCap ? "cap-over" : ""}">${items.length}/${maxNow}</span>` : "";
+    const help = {
+      now: "At most max_now items — anything not here is drift until this list says otherwise.",
+      next: "Ordered. The top item is what gets promoted when Now empties.",
+      blocked: "What it waits on and who owes it. If nobody owes anything, it belongs in Next.",
+      someday: "Real but not now — keeps Next honest without throwing things away.",
+    }[name];
     return `<div class="card prio-col">
       <div class="section-title"><h2>${name}</h2>${cap}</div>
+      <p class="help">${help}</p>
       ${prioItems(items, name === "now" && overCap)}
     </div>`;
   }).join("");
@@ -275,20 +415,26 @@ async function viewOverview(main) {
   main.innerHTML = `
     <h1>Overview</h1>
     ${focusCard}
+    ${syncCard}
     <div class="grid cols-4">${prioCols}</div>
     <div class="grid cols-2">
       <div class="card">
         <h2>Promised, due soon</h2>
+        <p class="help">Open commitments due within review.promise_horizon_days — the first ranking factor is a promise made to someone.</p>
         ${due ? `<table>${due}</table>` : '<p class="muted">(nothing due soon)</p>'}
       </div>
       <div class="card">
         <h2>Today — ${esc(o.today.date)}</h2>
+        <p class="help">Today's log, stamped with the focus ref at write time.</p>
         ${logEntries || '<p class="muted">(nothing logged yet)</p>'}
         <h2 style="margin-top:12px">Parked</h2>
+        <p class="help">Captured detours — written down so they stop pulling focus.</p>
         <p><span class="badge ${o.parked_open_count ? "blue" : ""}">${o.parked_open_count} open</span>
            <span class="muted">· ${o.open_charges_count} charge(s) outstanding</span></p>
       </div>
     </div>`;
+
+  wireSyncButtons(main, () => { refreshHeader(); render(); });
 
   main.querySelector('[data-act="focus-set"]').onclick = async () => {
     const ref = window.prompt("Focus ref (e.g. RM-4471):"); if (!ref) return;
@@ -301,10 +447,19 @@ async function viewOverview(main) {
     if (await act("/api/focus", { action: "push", ref, label })) { refreshHeader(); render(); }
   };
   main.querySelector('[data-act="focus-pop"]').onclick = async () => {
-    if (await act("/api/focus", { action: "pop" }, "Pop the current detour and return to what it interrupted?")) { refreshHeader(); render(); }
+    if (await act("/api/focus", { action: "pop" }, {
+      title: "Pop focus",
+      body: "Runs `dave.sh focus pop` — banks this segment, closes the detour, and returns to the focus stacked under it with its clock restarted.",
+      confirmLabel: "Pop",
+    })) { refreshHeader(); render(); }
   };
   main.querySelector('[data-act="focus-clear"]').onclick = async () => {
-    if (await act("/api/focus", { action: "clear" }, "Clear the focus (and anything stacked)?")) { refreshHeader(); render(); }
+    if (await act("/api/focus", { action: "clear" }, {
+      title: "Clear focus",
+      body: "Runs `dave.sh focus clear` — banks the open segment, then clears the focus and anything stacked under it.",
+      confirmLabel: "Clear",
+      danger: true,
+    })) { refreshHeader(); render(); }
   };
   main.querySelector('[data-act="next-set"]').onclick = async () => {
     const ref = window.prompt("Ref for the next note:", f ? f.ref : ""); if (!ref) return;
@@ -332,12 +487,18 @@ async function viewPriorities(main) {
         <h2>Edit priorities.md</h2>
         <span class="muted">last reconciled: ${esc(p.reconciled || "never")}</span>
       </div>
+      <p class="help">The single ranked list, hand-editable. Refs join focus, logs, missions, and drift — renaming one breaks the join.</p>
       <textarea id="prio-editor" rows="22">${esc(p.raw)}</textarea>
       <div class="form-row"><button id="prio-save" class="btn primary">Save</button></div>
     </div>`;
   main.querySelector("#prio-save").onclick = async () => {
     const markdown = main.querySelector("#prio-editor").value;
-    if (await act("/api/priorities", { markdown }, "Replace priorities.md with this text?")) render();
+    if (await act("/api/priorities", { markdown }, {
+      title: "Replace priorities.md",
+      body: "Runs `dave.sh priorities set` — atomically replaces the whole file with the editor contents. There is no undo; the old list is overwritten.",
+      confirmLabel: "Replace",
+      danger: true,
+    })) render();
   };
 }
 
@@ -378,6 +539,7 @@ async function viewMissions(main) {
     <h1>Missions &amp; Agents</h1>
     <div class="card">
       <h2>Missions</h2>
+      <p class="help">Delegations with a brief. Open first, ★ is the active mission — assign defaults to it. "no brief" means registered in missions.json without a brief file.</p>
       <table><thead><tr><th>slug</th><th>status</th><th>project</th><th>ref</th><th></th><th></th></tr></thead>
       <tbody>${listRows || '<tr><td colspan="6" class="muted">(no missions)</td></tr>'}</tbody></table>
       <div class="form-row">
@@ -388,6 +550,8 @@ async function viewMissions(main) {
       </div>
     </div>
     <div id="mission-detail"></div>
+    <div class="card"><h2>Roster</h2>
+      <p class="help">Agents from config.roster with their default model; charges and verdicts come from assignments.jsonl.</p></div>
     <div class="grid cols-4">${roster}</div>`;
 
   main.querySelectorAll(".mission-row").forEach((tr) => tr.addEventListener("click", () => {
@@ -460,7 +624,12 @@ async function renderMissionDetail(el, slug) {
   };
   el.querySelector("#md-close").onclick = async () => {
     const outcome = window.prompt("Outcome (optional):") || "";
-    if (await act("/api/missions", { action: "close", slug, outcome }, `Close mission ${slug}?`)) { refreshHeader(); render(); }
+    if (await act("/api/missions", { action: "close", slug, outcome }, {
+      title: `Close mission ${slug}`,
+      body: `Runs \`dave.sh mission close ${slug}\` — marks the mission closed. Any charge still open is noted as closed without a recorded verdict.`,
+      confirmLabel: "Close mission",
+      danger: true,
+    })) { refreshHeader(); render(); }
   };
   const recBtn = el.querySelector("#md-rec-btn");
   if (recBtn) recBtn.onclick = async () => {
@@ -519,11 +688,13 @@ async function viewProjects(main) {
         <span class="muted">scanned ${esc(data.scanned_at || "never")}</span>
         <span class="hdr-spacer"></span>
         <button id="p-rescan" class="btn small">rescan (fresh)</button></div>
-      <table><thead><tr><th>slug</th><th>status</th><th>cadence</th><th>branch</th><th>dirty/untr</th><th>commit</th><th>ahead</th><th>stale br</th><th>refs</th><th>goal</th><th>touched</th><th>actions</th></tr></thead>
+      <p class="help">Durable containers the ranked list has no room for — a directory, a goal, a cadence, and the refs that serve it. Git state comes from scan-cache.json.</p>
+      <table><thead><tr><th>slug</th><th>status</th><th title="how often it should move before the weekly sweep calls it slipping">cadence</th><th>branch</th><th title="uncommitted changed files / untracked files">dirty/untr</th><th title="days since the last commit">commit</th><th title="unpushed commits, measured without a fetch">ahead</th><th title="local branches with no commit in 30 days">stale br</th><th>refs</th><th>goal</th><th title="last explicit touch or banked focus segment">touched</th><th>actions</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="12" class="muted">(no projects registered)</td></tr>'}</tbody></table>
     </div>
     <div class="card">
       <h2>Register project</h2>
+      <p class="help">Registration is not activity — last_touched stays empty until real work banks against it.</p>
       <div class="form-row">
         <div><label for="p-add-path">path</label><input id="p-add-path" type="text" size="34"></div>
         <div><label for="p-add-name">name</label><input id="p-add-name" type="text"></div>
@@ -594,6 +765,7 @@ async function viewTime(main) {
   main.innerHTML = `
     <h1>Time</h1>
     <div class="card">
+      <p class="help">Segments banked each time focus changes. "Unverified" = elapsed minutes with no log line inside them — reported, never folded into the total. An open segment held overnight is capped and flagged, not asserted.</p>
       <div class="form-row">
         <div><label for="t-ref">ref</label><input id="t-ref" type="text" value="${esc(q.ref || "")}"></div>
         <div><label for="t-proj">project</label><input id="t-proj" type="text" value="${esc(q.project || "")}"></div>
@@ -672,9 +844,12 @@ async function viewTimeline(main) {
         <select id="tl-days">${[3, 7, 14, 30].map((d) => `<option${d === days ? " selected" : ""}>${d}</option>`).join("")}</select></div>
     </div></div>
     <div class="grid cols-2">
-      <div class="card"><h2>Log</h2>${dayGroups || '<p class="muted">(nothing logged)</p>'}</div>
+      <div class="card"><h2>Log</h2>
+        <p class="help">The append-only record, grouped by day; entries carry the focus ref at write time.</p>
+        ${dayGroups || '<p class="muted">(nothing logged)</p>'}</div>
       <div>
         <div class="card"><h2>Promises</h2>
+          <p class="help">Commitments made to someone — outranks deadlines in the priority model. Overdue is flagged, not hidden.</p>
           <table>${promiseRows || '<tr><td class="muted">(no commitments)</td></tr>'}</table>
           <div class="form-row">
             <div><label for="pr-who">who</label><input id="pr-who" type="text"></div>
@@ -685,6 +860,7 @@ async function viewTimeline(main) {
           </div>
         </div>
         <div class="card"><h2>Parking lot</h2>
+          <p class="help">Detours captured without acting on them. Retire marks one done; old open items rot into the weekly review.</p>
           <table>${parkedRows || '<tr><td class="muted">(nothing parked)</td></tr>'}${retiredRows}</table>
           <div class="form-row">
             <div><label for="pk-text">park something</label><input id="pk-text" type="text" size="40"></div>
@@ -692,6 +868,7 @@ async function viewTimeline(main) {
           </div>
         </div>
         <div class="card"><h2>Drift</h2>
+          <p class="help">Resolved drift episodes — a single nudge is noise, six into the same project is a pattern.</p>
           <table>${driftRows || '<tr><td class="muted">(no drift in the window)</td></tr>'}</table>
           <div class="form-row">
             <div><label for="dr-kind">kind</label>
@@ -704,6 +881,7 @@ async function viewTimeline(main) {
           </div>
         </div>
         <div class="card"><h2>Intake archive</h2>
+          <p class="help">Raw boards pasted in by hand, archived verbatim so intake stays auditable.</p>
           <table>${intakeRows || '<tr><td class="muted">(nothing archived)</td></tr>'}</table>
           <div id="in-view"></div>
           <div class="form-row">
@@ -720,7 +898,12 @@ async function viewTimeline(main) {
     if (await act("/api/promise", { action: "keep", id: b.dataset.id })) render();
   });
   main.querySelectorAll(".pr-miss").forEach((b) => b.onclick = async () => {
-    if (await act("/api/promise", { action: "miss", id: b.dataset.id }, `Mark ${b.dataset.id} as missed?`)) render();
+    if (await act("/api/promise", { action: "miss", id: b.dataset.id }, {
+      title: `Mark ${b.dataset.id} missed`,
+      body: `Runs \`dave.sh promise miss ${b.dataset.id}\` — closes the commitment as missed. It stays in the record; a miss is data, not deletion.`,
+      confirmLabel: "Mark missed",
+      danger: true,
+    })) render();
   });
   main.querySelectorAll(".pr-move").forEach((b) => b.onclick = async () => {
     const due = window.prompt(`New due date for ${b.dataset.id}:`); if (!due) return;
@@ -791,14 +974,17 @@ async function viewReview(main) {
   const topInto = Object.entries(driftInto).sort((a, b) => b[1] - a[1])[0];
 
   let html = `<h1>Review</h1>
-    <div class="card"><div class="form-row">
+    <div class="card">
+      <p class="help">Computed facts only — cadence vs. real activity, overdue promises, ungraded charges. Judgment stays yours.</p>
+      <div class="form-row">
       <div><label for="rv-days">days</label>
         <select id="rv-days">${[7, 14, 30].map((d) => `<option${d === days ? " selected" : ""}>${d}</option>`).join("")}</select></div>
       <span class="muted">Since ${esc(r.window.since)}: ${fmtMinutes(r.time.total)} recorded${r.time.unverified ? ` (${fmtMinutes(r.time.unverified)} unverified)` : ""}.</span>
     </div></div>`;
 
   if (slipping.length || overdue.length) {
-    html += `<div class="card"><h2 class="bad">Slipping</h2><ul>`;
+    html += `<div class="card"><h2 class="bad">Slipping</h2>
+      <p class="help">Worst first: overdue commitments, then projects quieter than their cadence allows.</p><ul>`;
     overdue.forEach((p) => { html += `<li><b>${esc(p.who)}</b> — ${esc(p.what)}, due ${esc(p.due)} <span class="badge red">OVERDUE</span></li>`; });
     slipping.forEach((p) => {
       html += `<li><b class="mono">${esc(p.slug)}</b> — ${esc(p.cadence)} cadence, nothing for ${p.days_quiet}d${p.dirty ? `, ${p.dirty} uncommitted file(s)` : ""}</li>`;
@@ -806,7 +992,8 @@ async function viewReview(main) {
     html += "</ul></div>";
   }
   if (owed.length) {
-    html += `<div class="card"><h2 class="warn">Owed</h2><ul>`;
+    html += `<div class="card"><h2 class="warn">Owed</h2>
+      <p class="help">Charges sent out and never graded, or missions that went quiet.</p><ul>`;
     owed.forEach((m) => {
       html += m.open_charges > 0
         ? `<li><b class="mono">${esc(m.slug)}</b> — ${m.open_charges} charge(s) outstanding, oldest sent ${m.oldest_open_days}d ago</li>`
@@ -815,7 +1002,8 @@ async function viewReview(main) {
     html += "</ul></div>";
   }
   if ((r.parked || []).length || (r.adhoc || []).length) {
-    html += `<div class="card"><h2 class="warn">Rotting</h2><ul>`;
+    html += `<div class="card"><h2 class="warn">Rotting</h2>
+      <p class="help">Parked items past the review threshold and ad-hoc items that should have become tickets.</p><ul>`;
     if ((r.parked || []).length) {
       const oldest = (r.parked || []).slice().sort((a, b) => a.parked.localeCompare(b.parked))[0];
       html += `<li>${r.parked.length} parked item(s) older than the review threshold — oldest: ${esc(oldest.text)}</li>`;
@@ -824,16 +1012,19 @@ async function viewReview(main) {
     html += "</ul></div>";
   }
   if (fine.length) {
-    html += `<div class="card"><h2 class="ok">Quiet and fine</h2><p>${
+    html += `<div class="card"><h2 class="ok">Quiet and fine</h2>
+      <p class="help">A sweep that only lists problems stops being read — this section is load-bearing.</p><p>${
       fine.map((p) => `<span class="mono">${esc(p.slug)}</span> (${esc(p.status === "active" ? p.cadence : p.status)})`).join(", ")
     }</p></div>`;
   }
   if ((r.drift || []).length) {
-    html += `<div class="card"><h2>Drift</h2><p>${r.drift.length} drift call(s): ${
+    html += `<div class="card"><h2>Drift</h2>
+      <p class="help">Reported as a pattern, not a scolding.</p><p>${r.drift.length} drift call(s): ${
       Object.entries(driftBy).map(([k, n]) => `${esc(k)} ×${n}`).join(", ")
     }${topInto && topInto[1] >= 2 ? ` — ${topInto[1]} of them into <span class="mono">${esc(topInto[0])}</span>` : ""}</p></div>`;
   }
-  html += `<div class="card"><h2>Needs your judgment</h2>`;
+  html += `<div class="card"><h2>Needs your judgment</h2>
+    <p class="help">What the script cannot decide — it hands this over rather than guessing.</p>`;
   if (r.blocked && r.blocked.trim()) {
     html += `<p>Blocked items — which of these has nobody chased?</p><pre class="code">${esc(r.blocked)}</pre>`;
   } else {
@@ -853,37 +1044,31 @@ async function viewReview(main) {
 async function viewSync(main) {
   const health = await apiGet("/api/health");
   const cfg = await apiGet("/api/config");
+  const syncCfg = (cfg && cfg.sync) || {};
+  const enabled = !!syncCfg.enabled;
+  const noSyncTip = "Sync not configured — run `dave.sh sync setup <remote-url>` first";
   main.innerHTML = `
     <h1>Sync &amp; Config</h1>
     <div class="card">
       <div class="section-title"><h2>Sync</h2>
-        <span class="badge ${cfg.sync && cfg.sync.enabled ? "green" : ""}">${cfg.sync && cfg.sync.enabled ? "enabled" : "not configured"}</span>
+        <span class="badge ${enabled ? "green" : ""}">${enabled ? "enabled" : "not configured"}</span>
         <span class="hdr-spacer"></span>
-        <button id="s-status" class="btn small">status</button>
-        <button id="s-pull" class="btn small">pull</button>
-        <button id="s-push" class="btn small danger">push</button>
+        <button class="btn small" data-sync="status">status</button>
+        <button class="btn small" data-sync="pull"${enabled ? "" : ` disabled title="${esc(noSyncTip)}"`}>pull</button>
+        <button class="btn small danger" data-sync="push"${enabled ? "" : ` disabled title="${esc(noSyncTip)}"`}>push</button>
       </div>
+      <p class="help">~/.dave as a git repo on a private remote: ${esc(syncCfg.remote || "(none configured)")}${syncCfg.branch ? ` (branch ${esc(syncCfg.branch)})` : ""}. Pull runs at session start; push is user-run only — the button is the boundary.</p>
       <pre id="sync-out" class="code muted">(fetch status to see ahead/behind/dirty)</pre>
     </div>
-    <div class="card"><h2>Config (redacted)</h2><pre class="code">${esc(JSON.stringify(cfg, null, 2))}</pre></div>
+    <div class="card"><h2>Config (redacted)</h2>
+      <p class="help">config.json verbatim, with anything named like a secret redacted before it leaves the server.</p>
+      <pre class="code">${esc(JSON.stringify(cfg, null, 2))}</pre></div>
     <div class="card"><h2>Health</h2>
+      <p class="help">What the dashboard is reading — the state root it serves and whether init has run.</p>
       <p class="mono">dave_home: ${esc(health.dave_home)}</p>
       <p class="mono">schema_version: ${esc(health.schema_version)} · setup: ${health.setup}</p>
     </div>`;
-  main.querySelector("#s-status").onclick = async () => {
-    const out = main.querySelector("#sync-out");
-    out.textContent = "fetching…";
-    try {
-      const d = await apiGet("/api/sync");
-      out.textContent = d.output;
-    } catch (e) { out.textContent = e.message; }
-  };
-  main.querySelector("#s-pull").onclick = async () => {
-    if (await act("/api/sync", { action: "pull" })) render();
-  };
-  main.querySelector("#s-push").onclick = async () => {
-    if (await act("/api/sync", { action: "push" }, "Push the state tree to the configured remote?")) render();
-  };
+  wireSyncButtons(main, render);
 }
 
 /* -------------------------------------------------------------------- boot */
@@ -898,6 +1083,22 @@ const VIEWS = {
   review: viewReview,
   sync: viewSync,
 };
+
+document.getElementById("hdr-about-btn").addEventListener("click", () => {
+  infoModal("About this dashboard", `
+    <p>A loopback-only view of <span class="mono">~/.dave</span> — the server binds 127.0.0.1 and nothing leaves the machine.</p>
+    <p>Reads come straight from the state files; <strong>every write runs <span class="mono">dave.sh</span></strong>, the same commands you'd type, so the state layer stays the only writer.</p>
+    <p>Views refresh themselves when the state tree changes (server-sent events); the dot in the header is the connection.</p>
+    <h3>Verdict colors</h3>
+    <table class="legend">
+      <tr><td><span class="badge green">trust</span></td><td>correct, complete, verified — folded in</td></tr>
+      <tr><td><span class="badge amber">partial</span></td><td>right direction, incomplete — a human finishes it</td></tr>
+      <tr><td><span class="badge red">rerun</span></td><td>wrong approach — redo with feedback</td></tr>
+      <tr><td><span class="badge">discard</span></td><td>useless — start over</td></tr>
+    </table>
+    <h3>Status badges</h3>
+    <p><span class="badge green">enabled/active</span> <span class="badge red">closed/overdue</span> <span class="badge amber">paused/stale</span> <span class="badge">open/neutral</span> — badges carry text so status never rides on color alone.</p>`);
+});
 
 refreshHeader();
 render();
