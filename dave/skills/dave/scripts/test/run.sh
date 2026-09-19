@@ -1195,6 +1195,116 @@ test_sync() {
   assert_contains "sync rebuild aliases rebuild" "$out" "rebuilt"
 }
 
+# The guided half of setup: a stub syncthing binary and a canned REST api on
+# PATH, credentials scraped from a fixture config.xml. STUB_VAULT/STUB_CAPTURE
+# carry the test paths into the stub so it needs no interpolation.
+test_sync_guided() {
+  dave init >/dev/null
+  local mock="$DAVE_HOME/mockbin" cap="$DAVE_HOME/post.json"
+  mkdir -p "$mock" "$DAVE_HOME/sthome"
+  cat > "$mock/syncthing" <<'STUB'
+#!/usr/bin/env bash
+echo "syncthing v1.27.0 (test stub)"
+STUB
+  cat > "$mock/curl" <<'STUB'
+#!/usr/bin/env bash
+url="${@: -1}"
+method="GET"; data=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X) method="$2"; shift 2 ;;
+    -d|--data*) data="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$method $url" in
+  GET*/rest/system/status) printf '{"myID":"STUB-ID-0001"}' ;;
+  GET*/rest/config/folders)
+    if [ -f "$STUB_CAPTURE" ]; then
+      printf '[{"id":"dave-vault","path":"%s","versioning":{"type":"staggered"}}]' "$STUB_VAULT"
+    else
+      printf '[]'
+    fi ;;
+  POST*/rest/config/folders) printf '%s' "$data" > "$STUB_CAPTURE"; printf '{}' ;;
+  *) exit 22 ;;
+esac
+STUB
+  chmod +x "$mock/syncthing" "$mock/curl"
+
+  # The <device> block's <address>dynamic</address> must NOT leak into the
+  # gui credentials — only the <gui> range is read.
+  cat > "$DAVE_HOME/sthome/config.xml" <<'STUB'
+<configuration version="37">
+    <device id="AAAA-BBBB"><address>dynamic</address></device>
+    <gui enabled="true" tls="false" debugging="false">
+        <address>127.0.0.1:8384</address>
+        <apikey>stub-key-123</apikey>
+    </gui>
+</configuration>
+STUB
+
+  # No daemon binary → install instructions, never a hang or a crash.
+  local out
+  out="$(env "PATH=$mock:$PATH" SYNCTHING_BIN=dave-no-such-syncthing \
+    "$DAVE" sync setup)"
+  assert_contains "missing daemon prints install hint" "$out" "not installed"
+  assert_contains "install hint names the package" "$out" "apt install syncthing"
+
+  # Daemon present but no api key anywhere → manual instructions.
+  out="$(env "PATH=$mock:$PATH" SYNCTHING_API_KEY="" \
+    SYNCTHING_CONFIG=/nonexistent "$DAVE" sync setup)"
+  assert_contains "no api key points at the gui" "$out" "no api key"
+
+  # --auto registers the folder without prompting (tests are never a tty).
+  out="$(env "PATH=$mock:$PATH" SYNCTHING_API_KEY="" \
+    "SYNCTHING_CONFIG=$DAVE_HOME/sthome/config.xml" \
+    "STUB_CAPTURE=$cap" "STUB_VAULT=$DAVE_HOME" \
+    "$DAVE" sync setup --auto)"
+  assert_contains "auto registers the folder" "$out" "registered 'dave-vault'"
+  assert_contains "setup prints the daemon's device id" "$out" "STUB-ID-0001"
+  assert_eq "POST carries the fixed folder id" "dave-vault" "$(jq -r .id "$cap")"
+  assert_eq "POST covers the vault path" "$DAVE_HOME" "$(jq -r .path "$cap")"
+  assert_eq "POST turns on the fs watcher" "true" "$(jq .fsWatcherEnabled "$cap")"
+  assert_eq "POST turns on staggered versioning" "staggered" \
+    "$(jq -r .versioning.type "$cap")"
+  assert_eq "scraped api key is saved device-locally" "stub-key-123" \
+    "$(jq -r .sync.syncthing_api_key "$DAVE_HOME/.local/config.json")"
+  assert_eq "gui address came from the <gui> block, not a device" \
+    "http://127.0.0.1:8384" \
+    "$(jq -r .sync.syncthing_url "$DAVE_HOME/.local/config.json")"
+
+  # Without --auto and without a tty, setup must skip rather than prompt.
+  rm -f "$cap"
+  out="$(env "PATH=$mock:$PATH" "STUB_CAPTURE=$cap" "STUB_VAULT=$DAVE_HOME" \
+    "$DAVE" sync setup </dev/null)"
+  assert_contains "no tty means skip, not prompt" "$out" "skipped"
+  [ ! -f "$cap" ] && ok "skipped setup posts nothing" \
+    || no "skipped setup posts nothing" "POST captured anyway"
+  # A piped yes is still not a tty.
+  out="$(printf 'y\n' | env "PATH=$mock:$PATH" "STUB_CAPTURE=$cap" \
+    "STUB_VAULT=$DAVE_HOME" "$DAVE" sync setup)"
+  assert_contains "piped input does not bypass the prompt" "$out" "skipped"
+
+  # Once registered, a re-run reports it instead of posting again.
+  env "PATH=$mock:$PATH" "STUB_CAPTURE=$cap" "STUB_VAULT=$DAVE_HOME" \
+    "$DAVE" sync setup --auto >/dev/null
+  out="$(env "PATH=$mock:$PATH" "STUB_CAPTURE=$cap" "STUB_VAULT=$DAVE_HOME" \
+    "$DAVE" sync setup --auto)"
+  assert_contains "second run sees the registered folder" "$out" "already registered"
+
+  # Status uses the saved credentials and reports the daemon's id for pairing.
+  local js
+  js="$(env "PATH=$mock:$PATH" "STUB_CAPTURE=$cap" "STUB_VAULT=$DAVE_HOME" \
+    "$DAVE" sync status --json)"
+  assert_eq "status sees the registered folder" "folder registered" \
+    "$(printf '%s' "$js" | jq -r .syncthing)"
+  assert_eq "status reports the daemon device id" "STUB-ID-0001" \
+    "$(printf '%s' "$js" | jq -r .syncthing_id)"
+  assert_exit "status exits clean with a reachable daemon" 0 \
+    env "PATH=$mock:$PATH" "STUB_CAPTURE=$cap" "STUB_VAULT=$DAVE_HOME" \
+    "$DAVE" sync status
+}
+
 test_help() {
   local out; out="$(dave help)"
   for c in init migrate rebuild brief focus drift park log standup mission intake project \
@@ -1414,7 +1524,7 @@ for t in init init_idempotent not_set_up_exits_3 migrate migrate_partial \
          journal_events journal_device \
          views_empty views_truncated_tail views_two_devices views_ordering \
          views_fingerprint views_interleaved views_id_collision \
-         sync help; do
+         sync sync_guided help; do
   run_test "$t"
 done
 

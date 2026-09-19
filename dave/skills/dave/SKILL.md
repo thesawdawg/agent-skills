@@ -130,8 +130,11 @@ costs one tool call. Run `scripts/dave.sh help` for the full command list.
 journal in `journal/<device>.jsonl`, and structured state is folded into views
 under `.local/views/` (device-local, kept out of the synced folder by `.stignore`
 along with the rendered log/parking markdown). `scripts/dave.sh sync setup` writes `.stignore`
-and flips `.sync.enabled` in `.local/config.json`; add the folder in Syncthing
-with the same Folder ID on both devices and enable Staggered File Versioning.
+and flips `.sync.enabled` in `.local/config.json`, then walks the Syncthing
+side: it reads the daemon's api key from `config.xml` and offers to register
+the vault as folder `dave-vault` (same Folder ID on both devices is therefore
+automatic) with Staggered File Versioning — `--auto` skips the prompt, and the
+manual GUI checklist is printed as fallback.
 `config.json` is shared, so per-device settings — `projects.root`,
 `projects.paths` (slug → checkout path), `hooks`, `sync.*` — live in
 `.local/config.json` and override it. `sync status` shows journals, view

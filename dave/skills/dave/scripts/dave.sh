@@ -116,8 +116,11 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
   dossier get [slug]        print it, with how far the repo has moved since
 
  sync (Syncthing moves the folder; dave.sh never pushes)
-  sync setup [--vault P]    write .stignore, device.json, and the checklist for
-                            adding $DAVE_HOME to Syncthing on both devices
+  sync setup [--vault P]    prepare the vault (.stignore, device.json, .obsidian),
+      [--auto]              then walk the Syncthing side: finds the daemon, reads
+                            its api key from config.xml, and offers to register
+                            $DAVE_HOME as folder 'dave-vault' — asks on a tty,
+                            --auto skips the prompt
   sync status               journals, view freshness, sync-conflict count  [--json]
   sync conflicts            list *.sync-conflict-* copies and their originals
   sync conflicts resolve <file> keep-local|keep-remote|merge

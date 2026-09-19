@@ -35,6 +35,13 @@ material deviations here.
 - **Orphaned `park.done` ids are ignored** in the reducer (a `park.done` whose
   id matches nothing is dropped rather than erroring — old trees can carry
   them).
+- **Guided `sync setup`** (user request, post-implementation): setup now finds
+  the local Syncthing daemon, scrapes its api key from `config.xml`, and
+  registers the vault as folder `dave-vault` over the REST API — prompted on a
+  tty, `--auto` for scripted runs — then persists the credentials to
+  `.local/config.json`. Installing Syncthing and pairing devices remain
+  manual (printed instructions). `sync status` additionally reports the
+  daemon's device id for pairing.
 
 ## Goal
 
@@ -223,5 +230,6 @@ One line per mutation:
 
 - Git-based sync of any kind, including a one-shot export.
 - Running `DAVE_HOME` on the Windows filesystem (`/mnt/c`).
-- Automated Syncthing installation or configuration beyond printed guidance and
-  optional REST-API verification.
+- Automated Syncthing installation or device pairing (printed guidance only).
+  Folder *registration* moved in scope post-implementation: guided `sync
+  setup` performs it over the REST API on confirmation.

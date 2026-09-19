@@ -47,26 +47,53 @@ _sync_api_url() {
   config_get '.sync.syncthing_url' 'http://127.0.0.1:8384'
 }
 
+# Every REST call goes through here: api-key header, bounded, silent.
+_sync_st_get() { # <key> <base-url> <path>
+  curl -sf --max-time 5 -H "X-API-Key: $1" "$2$3" 2>/dev/null
+}
+
+# The daemon's own device id — the value a peer needs to pair with us.
+_sync_st_myid() { # <key> <base-url> → device id, or empty when unreachable
+  local body
+  body="$(_sync_st_get "$1" "$2" /rest/system/status)" || return 0
+  printf '%s' "$body" | jq -r '.myID // empty' 2>/dev/null
+}
+
 # 0 = Syncthing answered and a folder whose path is $DAVE_HOME exists;
 # 1 = answered but no such folder; 2 = unreachable / not configured.
+# Credentials may be passed in (guided setup just discovered them) or fall back
+# to the configured pair.
 _sync_folder_state() {
-  local key url
-  key="$(_sync_api_key)"; url="$(_sync_api_url)"
+  local key="${1:-$(_sync_api_key)}" url="${2:-$(_sync_api_url)}"
   [ -n "$key" ] || return 2
   local body
-  body="$(curl -sf --max-time 5 -H "X-API-Key: $key" \
-    "$url/rest/config/folders" 2>/dev/null)" || return 2
+  body="$(_sync_st_get "$key" "$url" /rest/config/folders)" || return 2
   printf '%s' "$body" | jq -e --arg p "$DAVE_HOME" \
     'any(.[]; .path == $p)' >/dev/null 2>&1 \
     && return 0 || return 1
 }
 
+# The folder object covering $DAVE_HOME, empty when absent — lets setup inspect
+# an already-registered folder (e.g. whether versioning is on).
+_sync_folder_entry() { # <key> <base-url>
+  local body
+  body="$(_sync_st_get "$1" "$2" /rest/config/folders)" || return 0
+  printf '%s' "$body" | jq -c --arg p "$DAVE_HOME" \
+    'first(.[] | select(.path == $p)) // empty' 2>/dev/null
+}
+
+# The folder id is fixed on purpose: "same Folder ID on both devices" is what
+# makes two Syncthing folders one folder, and a constant means the guided
+# registration produces it identically on every device — no string to copy.
+SYNC_FOLDER_ID="dave-vault"
+
 _sync_setup() {
-  local vault=""
+  local vault="" auto=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --vault) vault="${2:-}"; shift 2 ;;
-      *) die "usage: sync setup [--vault PATH]" ;;
+      --auto)  auto=1; shift ;;
+      *) die "usage: sync setup [--vault PATH] [--auto]" ;;
     esac
   done
   if [ -n "$vault" ]; then
@@ -99,22 +126,208 @@ STIGNORE
   json_edit "$LOCAL_CONFIG" '.sync.enabled = true'
 
   cat <<EOF
-syncthing checklist (same on both devices):
+syncthing checklist (same on both devices — guided steps below can do it):
   1. add $DAVE_HOME as a Syncthing folder
-  2. use the same Folder ID on both devices
+  2. use the same Folder ID on both devices ('$SYNC_FOLDER_ID' when setup
+     registers it for you)
   3. enable Staggered File Versioning (conflict copies land as
      *.sync-conflict-* and 'sync conflicts' resolves them)
   4. ignore patterns are already in $DAVE_HOME/.stignore
 EOF
 
-  local state=0
-  _sync_folder_state || state=$?
-  case $state in
-    0) echo "syncthing: folder is registered for this path" ;;
-    1) echo "syncthing: reachable, but no folder covers $DAVE_HOME yet" ;;
-    2) echo "syncthing: not checked (no api key configured, or unreachable)" ;;
-  esac
+  _sync_guided "$auto"
   echo "sync: enabled in .local/config.json"
+}
+
+# ------------------------------------------------------------ guided setup
+#
+# The guided half of `sync setup`: find the daemon, borrow its api key from
+# config.xml, and offer to register the vault folder over the REST API. Every
+# step degrades to printed instructions — nothing here is required for sync to
+# work, it just saves the user a trip to the GUI.
+
+_sync_install_hint() {
+  cat <<'EOF'
+syncthing is not installed (or not on PATH). on linux:
+  debian/ubuntu:  sudo apt install syncthing     # newer builds: apt.syncthing.net
+  fedora:         sudo dnf install syncthing
+  arch:           sudo pacman -S syncthing
+then keep it running as a user service:
+  systemctl --user enable --now syncthing
+wsl2 without systemd: `nohup syncthing &` or any supervisor — the gui lands on
+http://127.0.0.1:8384 either way. re-run `dave.sh sync setup` once it is up.
+EOF
+}
+
+# Where the daemon's config.xml lives. SYNCTHING_CONFIG may point at the file
+# for non-standard homes (and tests); otherwise probe the platform defaults —
+# XDG first, then the newer ~/.local/state home.
+_sync_st_config_xml() {
+  local c="${SYNCTHING_CONFIG:-}"
+  if [ -n "$c" ]; then
+    [ -f "$c" ] && printf '%s\n' "$c"
+    return 0
+  fi
+  for c in "${XDG_CONFIG_HOME:-$HOME/.config}/syncthing/config.xml" \
+           "$HOME/.local/state/syncthing/config.xml"; do
+    [ -f "$c" ] && { printf '%s\n' "$c"; return 0; }
+  done
+}
+
+# Prints "<apikey>\t<gui-url>" scraped from config.xml. <address> also appears
+# inside <device> blocks, so only the <gui>…</gui> range is read. A wildcard
+# listen address is folded back to loopback — the api is only probed locally.
+_sync_st_credentials() {
+  local gui key addr scheme
+  gui="$(sed -n '/<gui[ >]/,/<\/gui>/p' "$1")"
+  key="$(printf '%s\n' "$gui" | sed -n 's:.*<apikey>\(.*\)</apikey>.*:\1:p' | head -1)"
+  addr="$(printf '%s\n' "$gui" | sed -n 's:.*<address>\(.*\)</address>.*:\1:p' | head -1)"
+  [ -n "$key" ] && [ -n "$addr" ] || return 1
+  case "$addr" in 0.0.0.0:*|"[::]:"*) addr="127.0.0.1:${addr##*:}" ;; esac
+  scheme="http"
+  case "$gui" in *tls=\"true\"*) scheme="https" ;; esac
+  printf '%s\t%s://%s\n' "$key" "$scheme" "$addr"
+}
+
+# Staggered versioning keeps N days of replaced copies — the safety net for
+# hand-edited prose when two devices touch the same file offline.
+_sync_st_versioning_json() {
+  jq -nc '{versioning:{type:"staggered",
+    params:{maxAge:"31536000",cleanInterval:"3600",versionsPath:""}}}'
+}
+
+# Register the vault as a send/receive folder. fsWatcher makes writes propagate
+# the moment they land instead of waiting for the rescan interval — that is the
+# "sync after every write" requirement, delivered by the daemon.
+_sync_st_register() { # <key> <base-url> <myid>
+  local body
+  body="$(jq -n --arg id "$SYNC_FOLDER_ID" --arg path "$DAVE_HOME" --arg dev "$3" '{
+    id:$id, label:"dave", path:$path, type:"sendreceive",
+    devices:[{deviceID:$dev}],
+    rescanIntervalS:3600,
+    fsWatcherEnabled:true, fsWatcherDelayS:5,
+    versioning:{type:"staggered",
+      params:{maxAge:"31536000",cleanInterval:"3600",versionsPath:""}}}')"
+  curl -sf --max-time 5 -X POST \
+    -H "X-API-Key: $1" -H 'Content-Type: application/json' \
+    -d "$body" "$2/rest/config/folders" >/dev/null 2>&1
+}
+
+_sync_st_patch_versioning() { # <key> <base-url> <folder-id>
+  curl -sf --max-time 5 -X PATCH \
+    -H "X-API-Key: $1" -H 'Content-Type: application/json' \
+    -d "$(_sync_st_versioning_json)" \
+    "$2/rest/config/folders/$3" >/dev/null 2>&1
+}
+
+# y only on a tty; everything else — including a piped or closed stdin — is a
+# no. --auto is the non-interactive way to say yes.
+_sync_confirm() { # <prompt>
+  [ -t 0 ] || return 1
+  local ans
+  read -r -p "$1 [y/N] " ans || return 1
+  case "$ans" in y|Y|yes|YES) return 0 ;; *) return 1 ;; esac
+}
+
+# Offer to turn on versioning when the registered folder predates it.
+_sync_guided_versioning() { # <key> <base-url> <auto>
+  local entry fid
+  entry="$(_sync_folder_entry "$1" "$2")"
+  [ -n "$entry" ] || return 0
+  [ "$(printf '%s' "$entry" | jq -r '.versioning.type // ""')" = "staggered" ] \
+    && return 0
+  fid="$(printf '%s' "$entry" | jq -r .id)"
+  if [ "$3" -eq 1 ] || _sync_confirm \
+       "folder has no staggered versioning — enable it (protects hand-edited markdown)?"; then
+    if _sync_st_patch_versioning "$1" "$2" "$fid"; then
+      echo "syncthing: staggered versioning enabled on '$fid'"
+    else
+      echo "syncthing: could not enable versioning — set it in the gui"
+    fi
+  fi
+}
+
+_sync_guided() {
+  local auto="$1" bin="${SYNCTHING_BIN:-syncthing}"
+  if ! command -v "$bin" >/dev/null 2>&1; then
+    _sync_install_hint
+    return 0
+  fi
+  "$bin" --version 2>/dev/null | head -1 || true
+
+  # Credentials come from env/local config first; if none were saved yet,
+  # scrape the daemon's own config.xml — it always knows its api key.
+  local key url
+  key="$(_sync_api_key)"; url="$(_sync_api_url)"
+  if [ -z "$key" ]; then
+    local xml creds
+    xml="$(_sync_st_config_xml)"
+    creds=""
+    [ -n "$xml" ] && creds="$(_sync_st_credentials "$xml")"
+    if [ -n "$creds" ]; then
+      key="${creds%%$'\t'*}"; url="${creds#*$'\t'}"
+    fi
+  fi
+  if [ -z "$key" ]; then
+    cat <<'EOF'
+syncthing: no api key found — register the folder by hand in the gui
+  (http://127.0.0.1:8384 -> add folder), or export SYNCTHING_API_KEY and re-run.
+EOF
+    return 0
+  fi
+
+  local myid
+  myid="$(_sync_st_myid "$key" "$url")"
+  if [ -z "$myid" ]; then
+    cat <<EOF
+syncthing: not reachable at $url — is the daemon running?
+  start it (systemctl --user start syncthing) and re-run: dave.sh sync setup
+EOF
+    return 0
+  fi
+  printf 'syncthing: api reachable at %s\n' "$url"
+  printf 'syncthing device id: %s\n' "$myid"
+
+  # Persist the key we just proved works so `sync status` can check the daemon
+  # without scraping config.xml again. Device-local file — never synced.
+  if [ "$(config_get '.sync.syncthing_api_key')" != "$key" ] || \
+     [ "$(config_get '.sync.syncthing_url')" != "$url" ]; then
+    json_edit "$LOCAL_CONFIG" --arg k "$key" --arg u "$url" \
+      '.sync.syncthing_api_key = $k | .sync.syncthing_url = $u'
+    echo "saved api credentials to .local/config.json"
+  fi
+
+  local state=0
+  _sync_folder_state "$key" "$url" || state=$?
+  case "$state" in
+    0)
+      echo "syncthing: folder already registered for $DAVE_HOME"
+      _sync_guided_versioning "$key" "$url" "$auto"
+      ;;
+    1)
+      if [ "$auto" -eq 1 ] || _sync_confirm \
+           "register $DAVE_HOME as syncthing folder '$SYNC_FOLDER_ID' (fs watch + staggered versioning)?"; then
+        if _sync_st_register "$key" "$url" "$myid"; then
+          echo "syncthing: registered '$SYNC_FOLDER_ID' -> $DAVE_HOME"
+        else
+          echo "syncthing: registration failed — add the folder in the gui instead"
+        fi
+      else
+        echo "syncthing: no folder covers $DAVE_HOME yet — skipped"
+        echo "  (re-run in a terminal to be asked, or: sync setup --auto)"
+      fi
+      ;;
+  esac
+
+  cat <<EOF
+
+pairing — once, on the other device:
+  1. install syncthing and run this same 'dave.sh sync setup'
+  2. add this device's id in its gui, or accept the introduction prompt:
+     $myid
+  3. share folder '$SYNC_FOLDER_ID' with that device and accept the share
+     prompt there — the identical folder id is what makes them one folder
+EOF
 }
 
 # -------------------------------------------------------------------- status
@@ -171,14 +384,21 @@ _sync_status() {
     1) syncthing="reachable, folder not registered" ;;
     2) syncthing="not checked" ;;
   esac
+  # The daemon's device id is what a peer needs to pair — worth one extra
+  # bounded call, but only when the api answered at all.
+  local stid=""
+  if [ "$state" -ne 2 ]; then
+    stid="$(_sync_st_myid "$(_sync_api_key)" "$(_sync_api_url)")"
+  fi
 
   if [ "$as_json" -eq 1 ]; then
     jq -n --argjson j "$journals" --argjson c "${conflicts:-0}" \
-      --arg fresh "$fresh" --arg st "$syncthing" \
+      --arg fresh "$fresh" --arg st "$syncthing" --arg stid "$stid" \
       --argjson enabled "$(sync_ready && echo true || echo false)" \
       --arg home "$DAVE_HOME" \
       '{home:$home, enabled:$enabled, journals:$j,
-        views:$fresh, conflicts:$c, syncthing:$st}'
+        views:$fresh, conflicts:$c, syncthing:$st,
+        syncthing_id:(if $stid == "" then null else $stid end)}'
     return 0
   fi
 
@@ -188,6 +408,8 @@ _sync_status() {
   printf '%s' "$journals" | jq -r '.[] | "journal: \(.dev)  \(.events) events, last \(.last_ts // "—")"'
   printf 'conflict copies: %s\n' "$conflicts"
   printf 'syncthing: %s\n' "$syncthing"
+  [ -n "$stid" ] && printf 'syncthing device: %s\n' "$stid"
+  return 0
 }
 
 # ----------------------------------------------------------------- conflicts

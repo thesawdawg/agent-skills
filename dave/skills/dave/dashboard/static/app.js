@@ -1086,8 +1086,9 @@ async function viewSync(main) {
         <button class="btn small" data-sync="status">status</button>
         <button class="btn small" data-sync="rebuild">rebuild views</button>
       </div>
-      <p class="help">Syncthing moves the folder; dave.sh never pushes. Set it up once per device with <span class="mono">dave.sh sync setup</span>, then add <span class="mono">${esc(health.dave_home)}</span> as a Syncthing folder with the same Folder ID on both devices.</p>
+      <p class="help">Syncthing moves the folder; dave.sh never pushes. Run <span class="mono">dave.sh sync setup</span> on each device — it finds the local Syncthing daemon and can register <span class="mono">${esc(health.dave_home)}</span> as the <span class="mono">dave-vault</span> folder for you, or prints the manual checklist.</p>
       <p class="mono muted">syncthing: ${esc(sync.syncthing || "not checked")}</p>
+      ${sync.syncthing_id ? `<p class="mono muted">syncthing device id: ${esc(sync.syncthing_id)}</p>` : ""}
       ${journals.length
         ? `<table><tr><th>device</th><th>events</th><th>last event</th></tr>${journalRows}</table>`
         : '<p class="muted">(no journals yet — this device writes its first event on the next command)</p>'}

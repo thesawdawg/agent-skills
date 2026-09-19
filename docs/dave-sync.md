@@ -42,39 +42,89 @@ source. Do not hand-edit `.local/render/log/*.md` or
 next write and your edit will silently vanish. Add entries with
 `dave.sh log "…"` and `dave.sh park "…"`; retire with `dave.sh parked done <n>`.
 
-## Syncthing setup (Linux + WSL2)
+## Syncthing setup
 
-1. **Install & enable** Syncthing inside WSL2 (not on the Windows side — the
-   vault lives in the Linux filesystem):
-   ```bash
-   systemctl --user enable --now syncthing
-   # or a systemd --user unit if your distro doesn't package one
-   ```
-   WSL2 has no systemd on some distros — then run `syncthing` under a
-   supervisor or `nohup`, or enable Windows-side Syncthing pointing at the
-   `\\wsl$` path (slower, but works).
+### 1. Install (native Linux or inside WSL2)
 
-2. **Windows firewall:** Syncthing listens on TCP 22000 (sync) and 8384 (GUI).
-   WSL2's NAT normally hides these; if the devices can't see each other, allow
-   inbound 22000 for the WSL host or set up the Windows-side relay/discovery
-   rules Syncthing documents.
+The vault lives in the Linux filesystem, so Syncthing runs on the Linux side —
+on the Windows machine that means *inside* WSL2, not on Windows itself.
 
-3. **Prepare the vault:** `dave.sh sync setup` writes `.stignore`
-   (`.local/`, `.obsidian/workspace*`, `*.tmp`, `*.swp`, `.DS_Store`), ensures
-   `device.json`, and flips `.sync.enabled` in `.local/config.json`.
+```bash
+sudo apt install syncthing     # debian/ubuntu; newer builds: apt.syncthing.net
+sudo dnf install syncthing     # fedora
+sudo pacman -S syncthing       # arch
 
-4. **Add the folder** in the Syncthing GUI (`http://127.0.0.1:8384`):
-   - Path: `~/.dave` — **use the same Folder ID on every device.** Syncthing
-     suggests a random one per device; override it so the folders match.
-   - Enable **Staggered File Versioning** — Syncthing's conflict copies are
-     rare (journals never collide), but versioning is what makes a bad merge
-     of `priorities.md` recoverable.
-   - Share it with the other device; accept it there with the same Folder ID.
+systemctl --user enable --now syncthing   # user service, no root needed
+```
 
-5. If `SYNCTHING_API_KEY` and `.sync.syncthing_url` are set in
-   `.local/config.json`, `dave.sh sync status` also reports whether Syncthing
-   itself is reachable and whether the folder is registered. Without them it
-   says "not checked" — that is fine; sync still works.
+WSL2 without systemd: run `syncthing` under `nohup` or a supervisor — the GUI
+lands on `http://127.0.0.1:8384` either way. (Windows-side Syncthing pointed at
+`\\wsl$` also works, but is slower and not recommended.)
+
+**Windows firewall:** Syncthing listens on TCP 22000 (sync) and 8384 (GUI).
+WSL2's NAT normally hides these; if the devices can't see each other, allow
+inbound 22000 for the WSL host or set up the Windows-side relay/discovery
+rules Syncthing documents.
+
+### 2. `dave.sh sync setup` (guided)
+
+Run it once per device. It always does the vault-side prep, then walks the
+Syncthing side as far as it can:
+
+1. Writes `.stignore` (`.local/`, `.obsidian/workspace*`, `*.tmp`, `*.swp`,
+   `.DS_Store`), ensures `device.json` and `.obsidian/app.json`, and flips
+   `.sync.enabled` in `.local/config.json`.
+2. Checks `syncthing` is on PATH — prints distro install instructions when not
+   (override the binary name with `SYNCTHING_BIN`).
+3. Finds the API key: `SYNCTHING_API_KEY` / `.local/config.json` first, then
+   scrapes `<apikey>` and the GUI address from Syncthing's own `config.xml`
+   (`$SYNCTHING_CONFIG`, then `$XDG_CONFIG_HOME/syncthing`,
+   `~/.config/syncthing`, `~/.local/state/syncthing`).
+4. Asks the daemon for its device id and whether a folder already covers the
+   vault.
+5. **Registers `~/.dave` for you** — folder id `dave-vault` (a fixed id, so the
+   "same Folder ID on both devices" rule is automatic), filesystem watching
+   for instant propagation, staggered versioning. On a terminal it asks first;
+   `dave.sh sync setup --auto` skips the prompt for scripted runs. If the
+   folder exists but lacks versioning it offers to patch that too.
+6. Saves the discovered key/url to `.local/config.json` (device-local, never
+   synced) so `sync status` can report daemon health afterwards.
+7. Prints this device's Syncthing id and the pairing steps below.
+
+Every step degrades to printed instructions — nothing in the guided path is
+required for sync to work; it only saves you a trip to the GUI.
+
+### 3. Pairing the devices (once)
+
+Syncthing pairing is mutual — each device must know the other:
+
+1. Run `dave.sh sync setup` on the second device; it prints that device's id.
+2. In either GUI (`http://127.0.0.1:8384`), add the other device's id under
+   **Add Remote Device** — or just accept the introduction prompt Syncthing
+   pops up when an unknown device connects.
+3. Share folder `dave-vault` with the new peer (Edit Folder → Sharing) and
+   accept the share prompt on the other side. The identical folder id is what
+   makes the two folders one folder.
+
+`dave.sh sync status` shows `syncthing: folder registered` plus this device's
+Syncthing id once setup has run — the id is the value the peer needs.
+
+### 4. Manual GUI route (fallback)
+
+If the guided path can't reach the daemon (no `config.xml`, non-standard
+home, remote Syncthing), do it by hand at `http://127.0.0.1:8384`:
+
+- **Add Folder** — path `~/.dave`, Folder ID `dave-vault` (any id works, but
+  it must be *identical on every device* — Syncthing suggests a random one,
+  override it).
+- Enable **Staggered File Versioning** — conflict copies are rare (journals
+  never collide), but versioning is what makes a bad merge of `priorities.md`
+  recoverable.
+- Share it with the other device; accept it there with the same Folder ID.
+- Optionally export `SYNCTHING_API_KEY` (GUI → Actions → Settings → API Key)
+  or set `.sync.syncthing_api_key` / `.sync.syncthing_url` in
+  `.local/config.json` so `sync status` reports reachability instead of
+  "not checked". Sync works without them.
 
 ## Obsidian
 
