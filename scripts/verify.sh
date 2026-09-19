@@ -48,6 +48,7 @@ bash tests/test_doc_repo.sh
 bash tests/test_fixture_runner.sh
 python3 tests/test_helpers.py
 python3 tests/test_installer.py
+python3 tests/test_dashboard.py
 
 # The sync exercise performs git pushes; keep it opt-in outside this suite.
 DAVE_TEST_SKIP_SYNC=1 bash dave/skills/dave/scripts/test/run.sh | tail -3

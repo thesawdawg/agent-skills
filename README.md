@@ -33,7 +33,7 @@ describes the CLI's opt-in skill-use workflow; it is separate from installation.
 | [commit-documentor](commit-documentor/SKILL.md) | Draft commit-related docs and commit only approved files locally. |
 | [constructor](constructor/SKILL.md) | Architecture, dependencies, specifications, and milestones. |
 | [datasecurer](datasecurer/SKILL.md) | Threat models, data protection, and tested recovery planning. |
-| [dave](dave/skills/dave/SKILL.md) | Optional priority/state management and plan execution; Critic reviews require code-review. |
+| [dave](dave/skills/dave/SKILL.md) | Optional priority/state management and plan execution; includes a local web dashboard. Critic reviews require code-review. |
 | [dependabot-validator](dependabot-validator/SKILL.md) | Compatibility review of Dependabot, Renovate, or manual dependency updates. |
 | [dogfood](dogfood/SKILL.md) | Evidence-backed browser QA and optional simulated persona UX. |
 | [flask-tests](flask-tests/SKILL.md) | Legacy application-specific fixtures; use only after confirming the owning app. |

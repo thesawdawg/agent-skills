@@ -18,3 +18,10 @@ for an existing plan without priority setup.
 
 Run `bash scripts/install-pi.sh --selftest` from this directory to test the adapter.
 Never auto-run `sync push`; cross-device publication is a user-run action.
+
+`scripts/dave.sh dashboard` serves a local web dashboard — focus, priorities,
+missions, projects, time, log, review — at `http://127.0.0.1:8766` (override with
+`--port`). It binds loopback only; the state tree is personal and never leaves
+the machine. Every write the UI offers goes back through `dave.sh`, so the file
+stays the only writer — and `sync push` from the UI fires only on a real button
+click, the same user-run boundary as the CLI.

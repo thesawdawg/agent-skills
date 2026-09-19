@@ -16,7 +16,35 @@ cmd_park() {
 
 cmd_parked() {
   require_init
-  grep '^- \[ \]' "$PARKING" 2>/dev/null || echo "(nothing parked)"
+  case "${1:-}" in
+    "") grep '^- \[ \]' "$PARKING" 2>/dev/null || echo "(nothing parked)" ;;
+    done) _parked_done "${2:-}" ;;
+    *) die "usage: parked [done <n>]" ;;
+  esac
+}
+
+# Retires the n-th open item (1-based, counting only `- [ ]` lines in file
+# order — the same numbering `parked` shows and the dashboard passes back).
+_parked_done() {
+  local n="$1"
+  case "$n" in ''|*[!0-9]*) die "usage: parked done <n>" ;; esac
+  local total
+  total="$(grep -c '^- \[ \]' "$PARKING" 2>/dev/null || true)"
+  [ "$n" -ge 1 ] && [ "$n" -le "${total:-0}" ] || die "no such parked item: $n"
+  local text tmp
+  text="$(awk -v n="$n" '/^- \[ \]/{c++; if (c == n) { sub(/^- \[ \] /, ""); print; exit }}' "$PARKING")"
+  tmp="$(mktemp "$PARKING.XXXXXX")"
+  awk -v n="$n" -v d="$(today)" '
+    /^- \[ \]/ {
+      c++
+      if (c == n) {
+        sub(/^- \[ \]/, "- [x]")
+        $0 = $0 " _(retired " d ")_"
+      }
+    }
+    { print }
+  ' "$PARKING" > "$tmp" && mv "$tmp" "$PARKING"
+  echo "retired: $text"
 }
 
 cmd_log() {

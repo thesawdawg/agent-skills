@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="dave-token" content="">
+<title>D.A.V.E. — ops console</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">D.A.V.E.</div>
+  <div id="hdr-user" class="hdr-item"></div>
+  <div id="hdr-focus" class="hdr-item hdr-focus"></div>
+  <div id="hdr-mission" class="hdr-item"></div>
+  <div id="hdr-intake" class="hdr-item"></div>
+  <div class="hdr-spacer"></div>
+  <div id="sse-dot" class="sse-dot" title="live updates">●</div>
+</header>
+<div id="layout">
+  <nav id="nav" aria-label="Views">
+    <button data-view="overview" class="nav-btn active">Overview</button>
+    <button data-view="priorities" class="nav-btn">Priorities</button>
+    <button data-view="missions" class="nav-btn">Missions &amp; Agents</button>
+    <button data-view="projects" class="nav-btn">Projects</button>
+    <button data-view="time" class="nav-btn">Time</button>
+    <button data-view="timeline" class="nav-btn">Timeline</button>
+    <button data-view="review" class="nav-btn">Review</button>
+    <button data-view="sync" class="nav-btn">Sync &amp; Config</button>
+  </nav>
+  <main id="main" tabindex="-1"></main>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

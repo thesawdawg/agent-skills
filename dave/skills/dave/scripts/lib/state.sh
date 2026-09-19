@@ -59,7 +59,26 @@ cmd_state() {
 
 cmd_priorities() {
   require_init
-  cat "$PRIORITIES"
+  case "${1:-}" in
+    "") cat "$PRIORITIES" ;;
+    set) _priorities_set ;;
+    *) die "usage: priorities [set]" ;;
+  esac
+}
+
+# Replaces priorities.md wholesale from stdin — the dashboard's save path.
+# Atomic via a tempfile next to the target, and a blank stream can never
+# clobber the list: empty input is the signature of a broken pipe, not an edit.
+_priorities_set() {
+  local tmp
+  tmp="$(mktemp "$PRIORITIES.XXXXXX")"
+  cat > "$tmp"
+  if [ -z "$(tr -d '[:space:]' < "$tmp")" ]; then
+    rm -f "$tmp"
+    die "priorities set: refusing to replace the list with empty input"
+  fi
+  mv "$tmp" "$PRIORITIES"
+  echo "priorities: updated"
 }
 
 # One composite read so a session start costs a single tool call, not five.
