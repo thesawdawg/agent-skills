@@ -32,6 +32,8 @@ DAVE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DAVE_SCRIPT_DIR/lib/review.sh"
 # shellcheck source=lib/sync.sh
 . "$DAVE_SCRIPT_DIR/lib/sync.sh"
+# shellcheck source=lib/dashboard.sh
+. "$DAVE_SCRIPT_DIR/lib/dashboard.sh"
 
 cmd_help() {
   cat <<'HELP'
@@ -47,7 +49,7 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
  orientation
   brief                     composite read: project, focus, priorities, today, parked
   review [--days N]         the weekly sweep: what is slipping, owed, rotting  [--json]
-  priorities                print priorities.md
+  priorities [set]          print priorities.md, or replace it from stdin
 
  projects
   project add <path>        register a project  [--name --slug --cadence --goal --status]
@@ -82,7 +84,7 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
 
  capture
   park <text>               capture a detour without acting on it
-  parked                    list open parked items
+  parked [done <n>]         list open parked items, or retire the n-th one
   log <text>                append a timestamped line to today's log
   today                     print today's log
   standup [days]            print the last N days of log (default 1)
@@ -109,6 +111,9 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
   sync pull                 rebase local state onto remote (runs inside brief)
   sync push                 commit + push state (user-run only)
   sync status               ahead/behind/dirty vs remote
+
+ dashboard
+  dashboard [--port N]      serve the local web dashboard (127.0.0.1 only)
 
 Exit codes: 3 = not set up (run init) · 4 = state schema is behind (run migrate)
 HELP
@@ -142,6 +147,7 @@ main() {
     promise) cmd_promise "$@" ;;
     intake) cmd_intake "$@" ;;
     sync) cmd_sync "$@" ;;
+    dashboard) cmd_dashboard "$@" ;;
     help|-h|--help) cmd_help ;;
     *) die "unknown command: $cmd (try: dave.sh help)" ;;
   esac

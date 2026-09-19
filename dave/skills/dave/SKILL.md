@@ -120,6 +120,7 @@ scripts/dave.sh mission status        # charges asked for and not yet returned
 scripts/dave.sh intake "platform board" < board.txt
 scripts/dave.sh sync push             # commit + push state to the remote (user-run only)
 scripts/dave.sh sync status           # ahead/behind/dirty vs remote
+scripts/dave.sh dashboard              # local web dashboard at http://127.0.0.1:8766
 ```
 
 **Use `brief` to orient, not four separate reads** — it exists so a session start

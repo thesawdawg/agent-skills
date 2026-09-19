@@ -148,6 +148,35 @@ test_journal() {
   assert_contains "standup with no history" "$(dave standup 99)" "retry middleware"
 }
 
+test_priorities_set() {
+  dave init >/dev/null
+  printf '# P\n\n## Now\n\n1. **RM-1** — the thing\n' | dave priorities set >/dev/null
+  assert_contains "priorities set replaces the file" "$(dave priorities)" "**RM-1** — the thing"
+  assert_contains "priorities set confirms" "$(printf '# P\n\nx\n' | dave priorities set)" "priorities: updated"
+  local before; before="$(cat "$DAVE_HOME/priorities.md")"
+  local got=0
+  printf '   \n' | dave priorities set >/dev/null 2>&1 || got=$?
+  assert_eq "whitespace-only stdin exits 1" "1" "$got"
+  assert_eq "a refused write leaves the file intact" "$before" "$(cat "$DAVE_HOME/priorities.md")"
+}
+
+test_parked_done() {
+  dave init >/dev/null
+  dave park "first idea" >/dev/null
+  dave park "second idea" >/dev/null
+  dave park "third idea" >/dev/null
+  local out; out="$(dave parked 'done' 2)"
+  assert_contains "retire reports the item" "$out" "retired: second idea"
+  assert_eq "two open items remain" "2" "$(dave parked | grep -c '^- \[ \]')"
+  grep -q '^- \[x\] second idea.*_(retired '"$(date +%F)"')_' "$DAVE_HOME/parking-lot.md" \
+    && ok "the retired line is marked with its date" \
+    || no "the retired line is marked with its date" "$(grep 'second' "$DAVE_HOME/parking-lot.md")"
+  assert_exit "an out-of-range index is refused" 1 dave parked 'done' 9
+  assert_exit "a non-numeric index is refused" 1 dave parked 'done' abc
+  assert_eq "the open items were not renumbered" "1" \
+    "$(grep -c '^- \[ \] third' "$DAVE_HOME/parking-lot.md")"
+}
+
 test_intake() {
   dave init >/dev/null
   local path; path="$(printf 'Doing\n- SSO rollout\n' | dave intake "platform board")"
@@ -946,7 +975,7 @@ test_sync() {
 test_help() {
   local out; out="$(dave help)"
   for c in init migrate brief focus drift park log standup mission intake project \
-           scan time next promise dossier review sync; do
+           scan time next promise dossier review sync dashboard; do
     assert_contains "help lists $c" "$out" "  $c"
   done
   assert_exit "an unknown command fails" 1 dave frobnicate
@@ -957,6 +986,7 @@ test_help() {
 command -v jq >/dev/null 2>&1 || { echo "jq is required to run these tests"; exit 1; }
 
 for t in init init_idempotent not_set_up_exits_3 migrate focus drift journal \
+         priorities_set parked_done \
          intake mission project project_resolve project_candidates \
          hook_schema_note brief focus_stack time_ledger time_open_cap \
          drift_events next promise scan brief_phase_b \
