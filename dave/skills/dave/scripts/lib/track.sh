@@ -30,18 +30,17 @@ cmd_next() {
 _next_set() {
   [ $# -ge 2 ] || die "usage: next set <ref> <text>"
   local ref="$1"; shift
-  json_ensure "$NOTES" '{}'
   local project; project="$(_focus_project_for "$ref")"
-  json_edit "$NOTES" --arg ref "$ref" --arg text "$*" --arg project "$project" \
+  event_append "next.set" "$(jq -nc \
+    --arg ref "$ref" --arg text "$*" --arg project "$project" \
     --arg ts "$(now_iso)" \
-    '.[$ref] = {text:$text, project:$project, updated:$ts}'
+    '{ref:$ref, text:$text, project:$project, ts:$ts}')"
   echo "next for $ref: $*"
 }
 
 _next_clear() {
   [ $# -ge 1 ] || die "usage: next clear <ref>"
-  json_ensure "$NOTES" '{}'
-  json_edit "$NOTES" --arg ref "$1" 'del(.[$ref])'
+  event_append "next.clear" "$(jq -nc --arg ref "$1" '{ref:$ref}')"
   echo "cleared next for $1"
 }
 
@@ -57,10 +56,10 @@ _next_show() {
   [ -f "$NOTES" ] || { echo "(no next actions recorded)"; return 0; }
   # A note records the project it was written under, but that is a hint, not the
   # authority: a ref linked to a project after the fact would otherwise leave its
-  # note orphaned. The project's own ref list wins.
+  # note orphaned. The project's own ref list — a derived view — wins.
   local refs_json="[]"
-  if [ -n "$project" ] && [ -f "$(_project_file "$project")" ]; then
-    refs_json="$(jq -c '.refs // []' "$(_project_file "$project")")"
+  if [ -n "$project" ] && [ -f "$PROJECTS_JSON" ]; then
+    refs_json="$(jq -c --arg s "$project" '.[$s].refs // []' "$PROJECTS_JSON")"
   fi
   jq -r --arg ref "$ref" --arg project "$project" --argjson refs "$refs_json" '
       to_entries
@@ -97,8 +96,12 @@ cmd_promise() {
   esac
 }
 
+_promise_any() {
+  [ -f "$COMMITMENTS" ] && jq -e 'length > 0' "$COMMITMENTS" >/dev/null 2>&1
+}
+
 _promise_require() {
-  [ -f "$COMMITMENTS" ] || die "no commitments recorded"
+  _promise_any || die "no commitments recorded"
   jq -e --arg id "$1" 'any(.[]; .id == $id)' "$COMMITMENTS" >/dev/null 2>&1 \
     || die "no such commitment: $1 (try: promise list)"
 }
@@ -120,13 +123,15 @@ _promise_add() {
   due_norm="$(date -d "$due" +%F 2>/dev/null)" || die "unreadable date: $due"
   [ -n "$project" ] || project="$(_focus_project_for "${ref:-}")"
 
-  json_ensure "$COMMITMENTS" '[]'
   local id
-  id="c$(( $(jq -r '[.[].id | ltrimstr("c") | tonumber] | max // 0' "$COMMITMENTS" 2>/dev/null || echo 0) + 1 ))"
-  json_edit "$COMMITMENTS" --arg id "$id" --arg who "$who" --arg what "$what" \
-    --arg due "$due_norm" --arg ref "$ref" --arg project "$project" --arg ts "$(now_iso)" \
-    '. += [{id:$id, who:$who, what:$what, due:$due, ref:$ref, project:$project,
-            status:"open", created:$ts, closed:null, moved:[]}]'
+  # Collision-suffixed ids (`c5~<dev>`) still count toward the max numeric part.
+  id="c$(( $(jq -r '[.[].id | ltrimstr("c") | split("~")[0] | tonumber? // 0] | max // 0' "$COMMITMENTS" 2>/dev/null || echo 0) + 1 ))"
+  event_append "promise.add" "$(jq -nc \
+    --arg id "$id" --arg who "$who" --arg what "$what" \
+    --arg due "$due_norm" --arg ref "$ref" --arg project "$project" \
+    --arg ts "$(now_iso)" \
+    '{id:$id, who:$who, what:$what, due:$due, ref:$ref, project:$project,
+      status:"open", created:$ts, closed:null, moved:[]}')"
   echo "$id: promised $who — $what, due $due_norm"
 }
 
@@ -140,7 +145,7 @@ _promise_list() {
       *) die "unknown flag: $1" ;;
     esac
   done
-  [ -f "$COMMITMENTS" ] || { [ "$as_json" -eq 1 ] && echo '[]' || echo "(no commitments recorded)"; return 0; }
+  _promise_any || { [ "$as_json" -eq 1 ] && echo '[]' || echo "(no commitments recorded)"; return 0; }
 
   local horizon=""
   [ -n "$within" ] && horizon="$(date -d "+${within} day" +%F)"
@@ -168,8 +173,10 @@ _promise_list() {
 _promise_close() {
   [ -n "${1:-}" ] || die "usage: promise keep|miss <id>"
   _promise_require "$1"
-  json_edit "$COMMITMENTS" --arg id "$1" --arg s "$2" --arg ts "$(now_iso)" \
-    'map(if .id == $id then .status = $s | .closed = $ts else . end)'
+  local ev="promise.keep"; [ "$2" = "missed" ] && ev="promise.miss"
+  event_append "$ev" "$(jq -nc \
+    --arg id "$1" --arg s "$2" --arg ts "$(now_iso)" \
+    '{id:$id, status:$s, ts:$ts}')"
   echo "$1: $2"
 }
 
@@ -181,8 +188,9 @@ _promise_move() {
   _promise_require "$1"
   local due_norm
   due_norm="$(date -d "$2" +%F 2>/dev/null)" || die "unreadable date: $2"
-  json_edit "$COMMITMENTS" --arg id "$1" --arg due "$due_norm" \
-    'map(if .id == $id then .moved = ((.moved // []) + [.due]) | .due = $due else . end)'
+  event_append "promise.move" "$(jq -nc \
+    --arg id "$1" --arg due "$due_norm" --arg ts "$(now_iso)" \
+    '{id:$id, due:$due, ts:$ts}')"
   local times
   times="$(jq -r --arg id "$1" '.[] | select(.id == $id) | (.moved | length)' "$COMMITMENTS")"
   echo "$1: now due $due_norm (moved $times time$( [ "$times" = "1" ] || echo s ))"

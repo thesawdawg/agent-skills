@@ -16,25 +16,39 @@ PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../.." 2>/dev/null && pwd || echo "")"
 DAVE_HOME="${DAVE_HOME:-$HOME/.dave}"
 
 CONFIG="$DAVE_HOME/config.json"
-STATE="$DAVE_HOME/state.json"
 PRIORITIES="$DAVE_HOME/priorities.md"
-PARKING="$DAVE_HOME/parking-lot.md"
-LOGDIR="$DAVE_HOME/log"
 MISSIONS="$DAVE_HOME/missions"
 INTAKE="$DAVE_HOME/intake"
+
+# The event journal is the source of truth for structured state; each device
+# appends only to its own file. Everything the commands used to write directly
+# is now a derived view under .local/, rebuilt from the journal on demand.
+# .local/ is Syncthing-ignored: device identity, device config, derived views,
+# and the rendered log/parking markdown all live there so generated content
+# can never produce a sync conflict.
+LOCAL="$DAVE_HOME/.local"
+JOURNAL_DIR="$DAVE_HOME/journal"
+VIEWS="$LOCAL/views"
+DEVICE_FILE="$LOCAL/device.json"
+LOCAL_CONFIG="$LOCAL/config.json"
+RENDER="$LOCAL/render"
+PARKING="$RENDER/parking-lot.md"
+LOGDIR="$RENDER/log"
 
 # Added by the projects/instrumentation/orchestration work. Created lazily —
 # a tree without them is a valid tree, and every reader defaults gracefully.
 PROJECTS="$DAVE_HOME/projects"
-NOTES="$DAVE_HOME/notes.json"
-COMMITMENTS="$DAVE_HOME/commitments.json"
-SESSIONS="$DAVE_HOME/sessions.jsonl"
-ASSIGNMENTS="$DAVE_HOME/assignments.jsonl"
-MISSIONS_JSON="$DAVE_HOME/missions.json"
-SCAN_CACHE="$DAVE_HOME/scan-cache.json"
+NOTES="$VIEWS/notes.json"
+COMMITMENTS="$VIEWS/commitments.json"
+SESSIONS="$VIEWS/sessions.jsonl"
+ASSIGNMENTS="$VIEWS/assignments.jsonl"
+MISSIONS_JSON="$VIEWS/missions.json"
+PROJECTS_JSON="$VIEWS/projects.json"
+SCAN_CACHE="$LOCAL/scan-cache.json"
+STATE="$VIEWS/state.json"
 
 # Bumped when the on-disk shape changes. `require_init` exits 4 below this.
-SCHEMA_VERSION=2
+SCHEMA_VERSION=3
 
 die() { echo "dave: $*" >&2; exit 1; }
 
@@ -44,6 +58,21 @@ need_jq() {
 
 today() { date +%F; }
 now_iso() { date -Iseconds; }
+# Event envelopes order by wall clock across devices; UTC keeps that honest.
+now_iso_utc() { date -u -Iseconds; }
+
+# Files a schema-2 tree kept at the vault root. Their presence means the tree
+# predates the journal layout and needs `migrate` — none of them may be read
+# directly anymore.
+_has_legacy_files() {
+  local f
+  for f in state.json notes.json commitments.json missions.json \
+           sessions.jsonl assignments.jsonl parking-lot.md; do
+    [ -f "$DAVE_HOME/$f" ] && return 0
+  done
+  [ -d "$DAVE_HOME/log" ] && return 0
+  return 1
+}
 
 # Exit 3 is the agreed "not set up yet" signal, distinct from a real error.
 # Exit 4 is "set up, but the state tree predates this version" — run `migrate`.
@@ -52,12 +81,19 @@ require_init() {
   # The version check needs jq. Without it, skip rather than die: commands that
   # genuinely need jq call need_jq themselves, and `priorities` never did.
   command -v jq >/dev/null 2>&1 || return 0
+  # Views are derived: refresh them before anything reads one. On a
+  # pre-journal tree this is a no-op and the schema check still exits 4.
+  _views_ensure
   local v
   v="$(jq -r '.schema_version // 1' "$STATE" 2>/dev/null || echo 1)"
   case "$v" in
     ''|*[!0-9]*) v=1 ;;
   esac
   [ "$v" -ge "$SCHEMA_VERSION" ] || exit 4
+  # Legacy root files mean the tree is mid- or pre-migration regardless of
+  # whether a journal exists — it must never be half-read. migrate is the
+  # only command that may run against such a tree, and it skips this check.
+  ! _has_legacy_files || exit 4
 }
 
 slugify() {
@@ -72,6 +108,11 @@ json_edit() {
   tmp="$(mktemp "${file}.XXXXXX")"
   if jq "$@" "$file" > "$tmp"; then
     mv "$tmp" "$file"
+    # A config write inside this process must invalidate the merged cache or
+    # the rest of the command would read the pre-edit merge.
+    case "$file" in
+      "$CONFIG"|"$LOCAL_CONFIG") _CONFIG_MERGED_FP=""; _CONFIG_MERGED_CACHE="" ;;
+    esac
   else
     rm -f "$tmp"
     die "failed to update $file"
@@ -145,15 +186,60 @@ json_get() {
   if [ -n "$v" ]; then printf '%s\n' "$v"; else printf '%s\n' "$dflt"; fi
 }
 
-config_get() { json_get "$CONFIG" "$1" "${2:-}"; }
+# Config is split: config.json in the vault is shared (user, roster, models,
+# review), .local/config.json is this device's overrides (projects.root,
+# projects.paths, hooks, sync). Readers see a deep merge where local wins.
+# A malformed or missing file degrades to {} rather than breaking the read.
+# Memoized per process: config_get/config_bool are called dozens of times in
+# brief/review and each uncached call costs three jq spawns. The cache is keyed
+# on both files' stat fingerprint, and json_edit clears it on a config write.
+_CONFIG_MERGED_CACHE=""
+_CONFIG_MERGED_FP=""
+
+_config_merged() {
+  local fp
+  fp="$(stat -c '%n=%s:%y' "$CONFIG" "$LOCAL_CONFIG" 2>/dev/null | tr '\n' ';')"
+  if [ "$fp" = "$_CONFIG_MERGED_FP" ] && [ -n "$_CONFIG_MERGED_CACHE" ]; then
+    printf '%s' "$_CONFIG_MERGED_CACHE"
+    return 0
+  fi
+  local s='{}' l='{}'
+  [ -f "$CONFIG" ]       && s="$(jq -c . "$CONFIG" 2>/dev/null || echo '{}')"
+  [ -f "$LOCAL_CONFIG" ] && l="$(jq -c . "$LOCAL_CONFIG" 2>/dev/null || echo '{}')"
+  # Params are filters, not values: `a` inside dm re-evaluates with the current
+  # `.`, so `dm(a[.]; b[.])` at depth two would index $s by the *inner* key and
+  # silently produce nulls. Rebinding to [a,b] as values first is what makes
+  # the recursion actually deep.
+  _CONFIG_MERGED_CACHE="$(jq -n --argjson s "$s" --argjson l "$l" '
+    def dm(a; b):
+      [a, b] as [$aa, $bb]
+      | if ($aa | type) == "object" and ($bb | type) == "object"
+        then (($aa | keys) + ($bb | keys) | unique
+              | map({key: ., value: dm($aa[.]; $bb[.])}) | from_entries)
+        elif $bb == null then $aa else $bb end;
+    dm($s; $l)')"
+  _CONFIG_MERGED_FP="$fp"
+  printf '%s' "$_CONFIG_MERGED_CACHE"
+}
+
+# Callers that need the merge more than once per process must NOT pipe
+# _config_merged into jq — that runs it in a subshell and the cache dies with
+# the pipe. Call it plainly first so _CONFIG_MERGED_CACHE lands in this shell.
+config_get() {
+  local path="$1" dflt="${2:-}" v
+  _config_merged >/dev/null
+  v="$(jq -r "$path // empty" <<< "$_CONFIG_MERGED_CACHE" 2>/dev/null || true)"
+  if [ -n "$v" ]; then printf '%s\n' "$v"; else printf '%s\n' "$dflt"; fi
+}
 
 # Booleans need their own reader: jq's `//` yields the right-hand side for `false`
 # as well as null, so `.x // true` can never return false. The session-start hook
 # learned this the hard way; do not "simplify" this back into json_get.
 config_bool() {
   local path="$1" dflt="$2"
-  jq -r "if $path == null then \"$dflt\" else ($path | tostring) end" "$CONFIG" \
-    2>/dev/null || printf '%s\n' "$dflt"
+  _config_merged >/dev/null
+  jq -r "if $path == null then \"$dflt\" else ($path | tostring) end" \
+    <<< "$_CONFIG_MERGED_CACHE" 2>/dev/null || printf '%s\n' "$dflt"
 }
 
 # ------------------------------------------------------------------------ git

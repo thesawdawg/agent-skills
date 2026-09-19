@@ -3,53 +3,37 @@
 # state.sh — the state tree itself: creation, migration, and the composite read.
 # Sourced by dave.sh.
 
-# The jq program that brings a state.json up to the current schema. Used by both
-# init and migrate so a fresh tree and an upgraded one are byte-identical.
-_state_upgrade_prog='
-    .schema_version = $v
-  | .focus         = (.focus // null)
-  | .focus_stack   = (.focus_stack // [])
-  | .active_mission = (.active_mission // null)
-  | .drift_events  = (.drift_events // [])
-  | .last_intake   = (.last_intake // null)
-  | .last_brief    = (.last_brief // null)
-'
+# state.json's defaults and schema version now live in lib/views.jq — the file
+# is a derived view, so a fresh tree and an imported one come out identical by
+# construction rather than by sharing an upgrade program.
 
 cmd_init() {
   need_jq
-  mkdir -p "$DAVE_HOME" "$LOGDIR" "$MISSIONS" "$INTAKE" "$PROJECTS"
-  [ -f "$CONFIG" ]     || cp "$TEMPLATES/config-template.json" "$CONFIG"
-  [ -f "$PRIORITIES" ] || cp "$TEMPLATES/priorities-template.md" "$PRIORITIES"
-  [ -f "$PARKING" ]    || printf '# Parking Lot\n\nCaptured detours, deferred ideas, and anything that pulled focus off the list.\nOpen items are `- [ ]`; retired ones `- [x]`.\n\n' > "$PARKING"
-  if [ ! -f "$STATE" ]; then
-    jq -n --arg ts "$(now_iso)" \
-      '{focus:null, last_intake:null, last_brief:null, created:$ts, drift_events:[]}' > "$STATE"
+  # A tree that still carries schema-2 files must be migrated, not initialised
+  # over — importing silently here would double-write once migrate runs.
+  if _has_legacy_files; then
+    echo "init: legacy state files found — run: dave.sh migrate" >&2
+    exit 4
   fi
-  json_edit "$STATE" --argjson v "$SCHEMA_VERSION" "$_state_upgrade_prog"
+  mkdir -p "$DAVE_HOME" "$MISSIONS" "$INTAKE" "$PROJECTS" \
+          "$LOCAL" "$VIEWS" "$JOURNAL_DIR" "$RENDER/log"
+  [ -f "$CONFIG" ]       || cp "$TEMPLATES/config-template.json" "$CONFIG"
+  [ -f "$PRIORITIES" ]   || cp "$TEMPLATES/priorities-template.md" "$PRIORITIES"
+  [ -f "$LOCAL_CONFIG" ] || printf '{}\n' > "$LOCAL_CONFIG"
+  # device.json supplies the `created` fallback an empty journal can't.
+  device_id >/dev/null
+  views_rebuild
   echo "$DAVE_HOME"
-}
-
-# Brings an existing tree forward. Idempotent, and safe to run on a tree this
-# version created.
-cmd_migrate() {
-  need_jq
-  [ -f "$CONFIG" ] || exit 3
-  mkdir -p "$DAVE_HOME" "$LOGDIR" "$MISSIONS" "$INTAKE" "$PROJECTS"
-  if [ ! -f "$STATE" ]; then
-    jq -n --arg ts "$(now_iso)" \
-      '{focus:null, last_intake:null, last_brief:null, created:$ts, drift_events:[]}' > "$STATE"
-  fi
-  local from
-  from="$(jq -r '.schema_version // 1' "$STATE" 2>/dev/null || echo 1)"
-  json_edit "$STATE" --argjson v "$SCHEMA_VERSION" "$_state_upgrade_prog"
-  echo "migrated: schema $from -> $SCHEMA_VERSION ($DAVE_HOME)"
 }
 
 cmd_home() { echo "$DAVE_HOME"; }
 
+# The merged view the commands themselves read: shared config.json with this
+# device's .local/config.json applied over it.
 cmd_config() {
   require_init
-  cat "$CONFIG"
+  _config_merged >/dev/null
+  jq . <<< "$_CONFIG_MERGED_CACHE"
 }
 
 cmd_state() {
@@ -85,16 +69,13 @@ _priorities_set() {
 cmd_brief() {
   require_init
   need_jq
-  # A synced tree only stays true if the session starts by pulling it. Bounded
-  # by gnet's timeouts: an offline machine degrades to local state, never a
-  # hung brief.
-  if sync_ready; then
-    echo "=== SYNC ==="
-    cmd_sync pull || echo "sync: using local state"
-    echo
-  fi
+  # Syncthing owns transport now: a brief never performs network work itself.
+  # Whatever the sync layer delivered since last read is already folded into
+  # the views by require_init's _views_ensure.
   echo "=== IDENTITY ==="
-  jq -r '"user: \(.user.name // "unknown")\naddress_as: \(.user.address_as // "-")\nwork_hours: \(.user.work_hours // "-")"' "$CONFIG"
+  _config_merged >/dev/null
+  jq -r '"user: \(.user.name // "unknown")\naddress_as: \(.user.address_as // "-")\nwork_hours: \(.user.work_hours // "-")"' \
+    <<< "$_CONFIG_MERGED_CACHE"
   echo
   # Project before list: orientation starts with where you are, and only then
   # with what is ranked. In an unregistered directory this stays one line.
@@ -103,10 +84,10 @@ cmd_brief() {
   if [ -z "$slug" ]; then
     echo "(this directory is not in a registered project)"
   else
-    jq -r '"\(.slug)\(if .name == .slug then "" else " — \(.name)" end)  ·  \(.status) · \(.cadence)",
-           "goal: \(if (.goal // "") == "" then "(none set)" else .goal end)",
-           "refs: \(if (.refs | length) == 0 then "(none linked)" else (.refs | join(", ")) end)"' \
-      "$(_project_file "$slug")"
+    _projects_all | jq -r --arg s "$slug" '.[] | select(.slug == $s) |
+      "\(.slug)\(if .name == .slug then "" else " — \(.name)" end)  ·  \(.status) · \(.cadence)",
+      "goal: \(if (.goal // "") == "" then "(none set)" else .goal end)",
+      "refs: \(if (.refs | length) == 0 then "(none linked)" else (.refs | join(", ")) end)"'
     # Refreshes the scan cache as a side effect, which is what leaves the hook
     # something to show without ever probing at session start itself.
     cmd_scan >/dev/null 2>&1 || true
@@ -173,5 +154,5 @@ cmd_brief() {
   echo
   echo "=== LAST INTAKE ==="
   jq -r '.last_intake // "(never — priorities may be stale)"' "$STATE"
-  json_edit "$STATE" --arg ts "$(now_iso)" '.last_brief = $ts'
+  event_append "brief.seen" "$(jq -nc --arg ts "$(now_iso)" '{ts:$ts}')"
 }

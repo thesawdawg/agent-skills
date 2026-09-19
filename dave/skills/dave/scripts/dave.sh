@@ -16,6 +16,14 @@ DAVE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=lib/common.sh
 . "$DAVE_SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/journal-core.sh
+. "$DAVE_SCRIPT_DIR/lib/journal-core.sh"
+# shellcheck source=lib/views.sh
+. "$DAVE_SCRIPT_DIR/lib/views.sh"
+# shellcheck source=lib/render.sh
+. "$DAVE_SCRIPT_DIR/lib/render.sh"
+# shellcheck source=lib/migrate.sh
+. "$DAVE_SCRIPT_DIR/lib/migrate.sh"
 # shellcheck source=lib/state.sh
 . "$DAVE_SCRIPT_DIR/lib/state.sh"
 # shellcheck source=lib/focus.sh
@@ -42,6 +50,7 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
  setup
   init                      create the state tree from templates (idempotent)
   migrate                   bring an older state tree up to the current schema
+  rebuild                   rebuild the derived views from the event journal
   home                      print the state directory path
   config                    print config.json          (exit 3 if not set up)
   state                     print state.json
@@ -106,11 +115,15 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
   dossier set [slug]        cache a codebase map, read from stdin
   dossier get [slug]        print it, with how far the repo has moved since
 
- sync
-  sync setup <remote-url>   make ~/.dave a git repo tracking a private remote
-  sync pull                 rebase local state onto remote (runs inside brief)
-  sync push                 commit + push state (user-run only)
-  sync status               ahead/behind/dirty vs remote
+ sync (Syncthing moves the folder; dave.sh never pushes)
+  sync setup [--vault P]    write .stignore, device.json, and the checklist for
+                            adding $DAVE_HOME to Syncthing on both devices
+  sync status               journals, view freshness, sync-conflict count  [--json]
+  sync conflicts            list *.sync-conflict-* copies and their originals
+  sync conflicts resolve <file> keep-local|keep-remote|merge
+                            keep-* are automatic; merge prints a diff — with no
+                            common ancestor there is nothing to merge against
+  sync rebuild              rebuild the derived views (alias of: rebuild)
 
  dashboard
   dashboard [--port N]      serve the local web dashboard (127.0.0.1 only)
@@ -125,6 +138,7 @@ main() {
   case "$cmd" in
     init) cmd_init "$@" ;;
     migrate) cmd_migrate "$@" ;;
+    rebuild) require_init; views_rebuild; echo "rebuilt: $VIEWS" ;;
     home) cmd_home "$@" ;;
     config) cmd_config "$@" ;;
     state) cmd_state "$@" ;;

@@ -41,11 +41,10 @@ _mission_require() {
 # them an entry on first touch rather than treating them as broken.
 _mission_register() {
   local slug="$1" project="${2:-}" ref="${3:-}"
-  json_ensure "$MISSIONS_JSON" '{}'
   jq -e --arg s "$slug" 'has($s)' "$MISSIONS_JSON" >/dev/null 2>&1 && return 0
-  json_edit "$MISSIONS_JSON" --arg s "$slug" --arg p "$project" --arg r "$ref" \
-    --arg d "$(today)" \
-    '.[$s] = {project:$p, ref:$r, status:"open", opened:$d, closed:null, outcome:null}'
+  event_append "mission.create" "$(jq -nc \
+    --arg s "$slug" --arg p "$project" --arg r "$ref" --arg d "$(today)" \
+    '{slug:$s, project:$p, ref:$r, opened:$d}')"
 }
 
 _mission_meta() {
@@ -147,7 +146,8 @@ _mission_set_active() {
   local slug; slug="$(slugify "$1")"
   _mission_require "$slug"
   _mission_register "$slug"
-  json_edit "$STATE" --arg s "$slug" '.active_mission = $s'
+  event_append "mission.open" "$(jq -nc \
+    --arg s "$slug" --arg d "$(today)" '{slug:$s, opened:$d}')"
   echo "active mission: $slug"
 }
 
@@ -165,11 +165,9 @@ _mission_close() {
   done
   local open_count
   open_count="$(_mission_open_assignments "$slug" | jq 'length')"
-  json_edit "$MISSIONS_JSON" --arg s "$slug" --arg o "$outcome" --arg ts "$(now_iso)" \
-    '.[$s].status = "closed" | .[$s].closed = $ts
-     | .[$s].outcome = (if $o == "" then .[$s].outcome else $o end)'
-  [ "$(json_get "$STATE" '.active_mission')" = "$slug" ] && \
-    json_edit "$STATE" '.active_mission = null'
+  event_append "mission.close" "$(jq -nc \
+    --arg s "$slug" --arg o "$outcome" --arg ts "$(now_iso)" \
+    '{slug:$s, outcome:$o, ts:$ts}')"
   echo "closed: $slug"
   # Not an error — a mission can legitimately close over an abandoned charge —
   # but silently dropping the audit trail's loose ends would be.
@@ -271,7 +269,7 @@ _mission_assign() {
   n="$(_mission_assignments "$mission" | jq '[.[] | select(.type == "assign")] | length')"
   id="${mission}#$(( n + 1 ))"
 
-  jsonl_append "$ASSIGNMENTS" "$(jq -nc --arg id "$id" --arg m "$mission" --arg a "$agent" \
+  event_append "mission.assign" "$(jq -nc --arg id "$id" --arg m "$mission" --arg a "$agent" \
     --arg model "$model" --arg charge "$charge" --arg ref "$ref" --arg p "$project" \
     --arg ts "$(now_iso)" \
     '{type:"assign", id:$id, mission:$m, agent:$a, model:$model, charge:$charge,
@@ -298,7 +296,7 @@ _mission_record() {
   _mission_assignments "$mission" | jq -e --arg id "$id" \
     'any(.[]; .type == "assign" and .id == $id)' >/dev/null 2>&1 \
     || die "no such assignment: $id (try: mission status)"
-  jsonl_append "$ASSIGNMENTS" "$(jq -nc --arg id "$id" --arg m "$mission" --arg v "$verdict" \
+  event_append "mission.grade" "$(jq -nc --arg id "$id" --arg m "$mission" --arg v "$verdict" \
     --arg s "$summary" --arg ts "$(now_iso)" \
     '{type:"record", id:$id, mission:$m, verdict:$v, summary:$s, ts:$ts}')"
   echo "$id: $verdict"

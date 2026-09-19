@@ -25,7 +25,30 @@ _project_require() {
   [ -f "$(_project_file "$slug")" ] || die "no such project: $slug (try: project list)"
 }
 
-# Every registered project as one JSON array. The find guard matters: a bare glob
+# project.json holds the shared identity only; where the checkout lives is a
+# property of this device and stays in .local/config.json so the vault never
+# fights over absolute paths that differ between machines. A project.json that
+# still carries a `path` predates the split — fall back to it rather than
+# pretending the project is unmapped.
+_project_path() {
+  local slug="$1" p=""
+  [ -f "$LOCAL_CONFIG" ] && \
+    p="$(jq -r --arg s "$slug" '.projects.paths[$s] // empty' "$LOCAL_CONFIG" 2>/dev/null)"
+  [ -n "$p" ] || p="$(json_get "$(_project_file "$slug")" '.path')"
+  printf '%s' "$p"
+}
+
+_project_path_set() {
+  local slug="$1" path="$2"
+  [ -f "$LOCAL_CONFIG" ] || printf '{}\n' > "$LOCAL_CONFIG"
+  json_edit "$LOCAL_CONFIG" --arg s "$slug" --arg p "$path" \
+    '.projects.paths[$s] = $p'
+}
+
+# Every registered project as one JSON array, with the derived view (refs,
+# last_touched) and this device's path merged over the shared identity so the
+# readers below see the shape they always did. `path` is null where this
+# device has no checkout for the project. The find guard matters: a bare glob
 # with no matches expands to a literal path and takes jq down with it.
 _projects_all() {
   [ -d "$PROJECTS" ] || { printf '[]\n'; return 0; }
@@ -33,7 +56,16 @@ _projects_all() {
   while IFS= read -r -d '' f; do files+=("$f"); done \
     < <(find "$PROJECTS" -mindepth 2 -maxdepth 2 -name project.json -print0 2>/dev/null)
   [ "${#files[@]}" -gt 0 ] || { printf '[]\n'; return 0; }
-  jq -s 'map(select(type == "object"))' "${files[@]}" 2>/dev/null || printf '[]\n'
+  local view='{}' paths='{}'
+  [ -f "$VIEWS/projects.json" ] && view="$(jq -c . "$VIEWS/projects.json" 2>/dev/null || echo '{}')"
+  [ -f "$LOCAL_CONFIG" ] && \
+    paths="$(jq -c '.projects.paths // {}' "$LOCAL_CONFIG" 2>/dev/null || echo '{}')"
+  jq -s --argjson view "$view" --argjson paths "$paths" '
+    map(select(type == "object")
+        | . + {refs: [], last_touched: null}
+        + ($view[.slug] // {})
+        + {path: ($paths[.slug] // .path // null)})' "${files[@]}" 2>/dev/null \
+    || printf '[]\n'
 }
 
 _canonical() { (cd "$1" 2>/dev/null && pwd -P) || printf '%s' "$1"; }
@@ -87,13 +119,14 @@ _project_add() {
   [ -n "$clash" ] && die "that path is already registered as: $clash"
 
   mkdir -p "$(_project_dir "$slug")"
-  # last_touched starts null deliberately. Registering a project is not working
-  # on it, and stamping it here would make every newly registered project look
-  # active — which is exactly the state the weekly sweep needs to contradict.
-  jq -n --arg slug "$slug" --arg name "$name" --arg path "$path" --arg status "$status" \
+  # The document carries only what every device shares: identity, goal,
+  # cadence. Where the checkout lives and when it was last worked are local
+  # map and journal events respectively, so neither appears here.
+  jq -n --arg slug "$slug" --arg name "$name" --arg status "$status" \
         --arg goal "$goal" --arg cadence "$cadence" --arg added "$(today)" \
-    '{slug:$slug, name:$name, path:$path, status:$status, goal:$goal, cadence:$cadence,
-      refs:[], added:$added, last_touched:null}' > "$(_project_file "$slug")"
+    '{slug:$slug, name:$name, status:$status, goal:$goal, cadence:$cadence,
+      added:$added}' > "$(_project_file "$slug")"
+  _project_path_set "$slug" "$path"
   echo "registered: $slug — $path ($status, $cadence)"
 }
 
@@ -118,9 +151,9 @@ _project_list() {
   fi
   printf '%s' "$all" | jq -r '
     sort_by(.status, .slug)[]
-    | "\(.slug)\t\(.status)\t\(.cadence)\t\(.refs | length) refs\t\(.path)"' \
+    | "\(.slug)\t\(.status)\t\(.cadence)\t\(.refs | length) refs\t\(.path // "(path not set on this device)")"' \
     | column -t -s "$(printf '\t')" 2>/dev/null \
-    || printf '%s' "$all" | jq -r 'sort_by(.slug)[] | "\(.slug)  \(.status)  \(.path)"'
+    || printf '%s' "$all" | jq -r 'sort_by(.slug)[] | "\(.slug)  \(.status)  \(.path // "(path not set on this device)")"'
   _project_candidates
 }
 
@@ -140,6 +173,7 @@ _project_candidates() {
     [ "$shown" -eq 0 ] && { echo; echo "unregistered under $root:"; shown=1; }
     printf '  %s\n' "$d"
   done
+  return 0
 }
 
 _project_show() {
@@ -147,13 +181,15 @@ _project_show() {
   if [ -n "$slug" ]; then slug="$(_project_norm "$slug")"; else slug="$(_project_resolve)"; fi
   [ -n "$slug" ] || die "no project given, and this directory is not in a registered project"
   _project_require "$slug"
-  local p; p="$(cat "$(_project_file "$slug")")"
+  # Identity from the shared document, refs/last_touched from the view, path
+  # from this device's map.
+  local p; p="$(_projects_all | jq --arg s "$slug" '.[] | select(.slug == $s)')"
 
   printf '%s' "$p" | jq -r '
     "=== PROJECT ===",
     "slug: \(.slug)",
     "name: \(.name)",
-    "path: \(.path)",
+    "path: \(.path // "(path not set on this device)")",
     "status: \(.status) · cadence: \(.cadence)",
     "goal: \(if (.goal // "") == "" then "(none set)" else .goal end)",
     "added: \(.added) · last touched: \(.last_touched // "(not yet)")"'
@@ -179,14 +215,18 @@ _project_show() {
 
   echo
   echo "=== GIT ==="
-  local path probe; path="$(printf '%s' "$p" | jq -r .path)"
-  probe="$(git_probe "$path")"
-  printf '%s' "$probe" | jq -r '
-    if .exists == false then "(path is gone: \(.path))"
-    elif .repo == false then "(not a git repository)"
-    else "branch: \(.branch) · dirty: \(.dirty) · untracked: \(.untracked) · ahead \(.ahead) / behind \(.behind) (no fetch)",
-         "last commit: \(.last_commit // "(none)") — \(.last_subject // "")"
-    end'
+  local path probe; path="$(printf '%s' "$p" | jq -r '.path // empty')"
+  if [ -z "$path" ]; then
+    echo "(path not set on this device)"
+  else
+    probe="$(git_probe "$path")"
+    printf '%s' "$probe" | jq -r '
+      if .exists == false then "(path is gone: \(.path))"
+      elif .repo == false then "(not a git repository)"
+      else "branch: \(.branch) · dirty: \(.dirty) · untracked: \(.untracked) · ahead \(.ahead) / behind \(.behind) (no fetch)",
+           "last commit: \(.last_commit // "(none)") — \(.last_subject // "")"
+      end'
+  fi
 
   # missions.json arrives with the assignment ledger; absent, this stays quiet.
   if [ -f "$MISSIONS_JSON" ]; then
@@ -216,7 +256,8 @@ _project_link() {
   local owner
   owner="$(_project_of_slug "$ref")"
   [ -n "$owner" ] && [ "$owner" != "$slug" ] && die "$ref is already linked to $owner (unlink it first)"
-  json_edit "$(_project_file "$slug")" --arg r "$ref" '.refs = ((.refs // []) + [$r] | unique)'
+  event_append "project.link" \
+    "$(jq -nc --arg slug "$slug" --arg ref "$ref" '{slug:$slug, ref:$ref}')"
   echo "$slug: linked $ref"
 }
 
@@ -224,7 +265,8 @@ _project_unlink() {
   [ $# -ge 2 ] || die "usage: project unlink <slug> <ref>"
   local slug ref; slug="$(_project_norm "$1")"; ref="$2"
   _project_require "$slug"
-  json_edit "$(_project_file "$slug")" --arg r "$ref" '.refs = ((.refs // []) - [$r])'
+  event_append "project.unlink" \
+    "$(jq -nc --arg slug "$slug" --arg ref "$ref" '{slug:$slug, ref:$ref}')"
   echo "$slug: unlinked $ref"
 }
 
@@ -262,7 +304,8 @@ _project_touch() {
   if [ -n "$slug" ]; then slug="$(_project_norm "$slug")"; else slug="$(_project_resolve)"; fi
   [ -n "$slug" ] || die "no project given, and this directory is not in a registered project"
   _project_require "$slug"
-  json_edit "$(_project_file "$slug")" --arg ts "$(now_iso)" '.last_touched = $ts'
+  event_append "project.touch" \
+    "$(jq -nc --arg slug "$slug" --arg ts "$(now_iso)" '{slug:$slug, ts:$ts}')"
   echo "$slug: touched"
 }
 
@@ -316,6 +359,8 @@ _scan_probe_all() {
   while IFS=$'\t' read -r slug path status; do
     [ -n "$slug" ] || continue
     [ "$include_archived" -eq 0 ] && [ "$status" = "archived" ] && continue
+    # No local path means there is nothing this device can probe.
+    if [ -z "$path" ] || [ "$path" = "null" ]; then continue; fi
     probe="$(git_probe "$path")"
     days="$(_scan_days_since "$(printf '%s' "$probe" | jq -r '.last_commit // ""')")"
     prs="$(_scan_gh_prs "$path")"
@@ -381,6 +426,15 @@ cmd_scan() {
         end
       ) | join("\n")
     end' | { column -t -s "$(printf '\t')" 2>/dev/null || cat; }
+  # Projects this device has no checkout for were left out of the probe
+  # entirely; name them rather than letting them vanish quietly.
+  local skipped
+  skipped="$(_projects_all | jq -r --argjson inc "$include_archived" '
+    .[] | select(.path == null)
+      | select($inc == 1 or .status != "archived") | .slug' \
+    | paste -sd', ' - 2>/dev/null || true)"
+  [ -n "$skipped" ] && echo "skipped (path not set on this device): $skipped"
+  return 0
 }
 
 # What the hook shows: known-fresh git state, or nothing at all. Never probes.
@@ -426,7 +480,7 @@ _dossier_set() {
   cat > "$path"
   # Stamped with the commit it describes, so staleness is measurable rather than
   # a guess about how long ago someone ran Cartographer.
-  head="$(git -C "$(json_get "$(_project_file "$slug")" '.path')" rev-parse HEAD 2>/dev/null || echo "")"
+  head="$(git -C "$(_project_path "$slug")" rev-parse HEAD 2>/dev/null || echo "")"
   json_edit "$(_project_file "$slug")" --arg h "$head" --arg ts "$(now_iso)" \
     '.dossier = {head:$h, at:$ts}'
   echo "$path"
@@ -440,7 +494,7 @@ _dossier_staleness() {
   [ -f "$pf" ] || return 0
   [ -f "$(_dossier_path "$slug")" ] || return 0
   head="$(json_get "$pf" '.dossier.head')"
-  path="$(json_get "$pf" '.path')"
+  path="$(_project_path "$slug")"
   if [ -z "$head" ]; then echo "age unknown — it was not stamped with a commit"; return 0; fi
   n="$(git -C "$path" rev-list --count "$head..HEAD" 2>/dev/null || echo "")"
   if [ -z "$n" ]; then echo "age unknown — that commit is no longer in this repository"; return 0; fi
