@@ -145,7 +145,8 @@ class DashboardApi:
             "/api/scan": self.post_scan,
             "/api/priorities": self.post_priorities,
             "/api/intake": self.post_intake,
-            "/api/sync": self.post_sync,
+            "/api/sync/rebuild": self.post_sync_rebuild,
+            "/api/sync/resolve": self.post_sync_resolve,
         }
 
     def dispatch_get(self, path: str, params: dict[str, list[str]]) -> Any:
@@ -480,30 +481,33 @@ class DashboardApi:
         return {"file": name, "content": content}
 
     def sync(self, params: dict[str, list[str]]) -> dict[str, Any]:
-        """Sync status. Can take ~15s when the remote is slow.
+        """Sync status plus the conflict copies it knows about.
 
         Args:
             params: Parsed query string.
 
         Returns:
-            {output, enabled}.
+            The `sync status --json` payload plus {conflict_list}.
         """
-        return {
-            "output": self.cli.sync_status(),
-            "enabled": bool(_dig(self.reader.config(redact=False),
-                                 ("sync", "enabled"), False)),
-        }
+        status = self.cli.sync_status_json()
+        if not isinstance(status, dict):
+            status = {}
+        status["conflict_list"] = self.cli.sync_conflicts_json()
+        return status
 
     def config(self, params: dict[str, list[str]]) -> dict[str, Any]:
-        """config.json with credential-shaped values masked.
+        """The merged config, marked with which keys are device-local.
 
         Args:
             params: Parsed query string.
 
         Returns:
-            The redacted config object.
+            The redacted merged config plus {_local_keys}.
         """
-        return self.reader.config(redact=True)
+        cfg = self.reader.config(redact=True)
+        if isinstance(cfg, dict):
+            cfg["_local_keys"] = self.reader.local_config_keys()
+        return cfg
 
     # ----------------------------------------------------------- POST handlers
 
@@ -734,18 +738,42 @@ class DashboardApi:
         output = self.cli.intake(body["source"], body["text"])
         return {"output": output, "files": self.reader.intake_files()}
 
-    def post_sync(self, body: dict[str, Any]) -> dict[str, Any]:
-        """Pull or push the state tree.
+    def post_sync_rebuild(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Rebuild the derived views from the journal.
 
         Args:
-            body: {action: pull|push}. Push is only ever a user click.
+            body: Ignored.
 
         Returns:
             {output}.
         """
-        action = _one_of(body, "action", ("pull", "push"))
-        output = self.cli.sync(action)
-        return {"output": output}
+        return {"output": self.cli.sync_rebuild()}
+
+    def post_sync_resolve(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Resolve one sync-conflict copy.
+
+        Args:
+            body: {file: conflict path, action: keep-local|keep-remote|merge}.
+
+        Returns:
+            {output, conflict_list}.
+        """
+        _require(body, "file")
+        action = _one_of(body, "action", ("keep-local", "keep-remote", "merge"))
+        conflict = str(body["file"])
+        # Defense in depth under the shell-side check: the path must sit
+        # inside DAVE_HOME and carry the sync-conflict name.
+        home = Path(self.dave_home).resolve()
+        path = Path(conflict)
+        if not path.is_absolute():
+            path = home / conflict
+        resolved = path.resolve()
+        if home not in (resolved, *resolved.parents):
+            raise ApiError(400, "file must be inside DAVE_HOME")
+        if ".sync-conflict-" not in resolved.name:
+            raise ApiError(400, "file is not a sync-conflict copy")
+        output = self.cli.sync_resolve(str(resolved), action)
+        return {"output": output, "conflict_list": self.cli.sync_conflicts_json()}
 
 
 def _dig(obj: dict[str, Any], path: tuple[str, ...], default: Any) -> Any:

@@ -52,7 +52,8 @@ class DashboardTests(unittest.TestCase):
         dave(cls.home, 'log', 'seeded log line')
         dave(cls.home, 'park', 'a parked idea')
         dave(cls.home, 'park', 'another parked idea')
-        dave(cls.home, 'promise', 'add', 'Maya', 'SSO demo', 'friday', '--ref', 'RM-4471')
+        dave(cls.home, 'promise', 'add', 'Maya', 'SSO demo', 'tomorrow',
+             '--ref', 'RM-4471')
         dave(cls.home, 'mission', 'new', 'sso rollout', '--ref', 'RM-4471')
         assignment = dave(cls.home, 'mission', 'assign', 'sso-rollout', 'scout',
                           'have a look').stdout.strip()
@@ -151,7 +152,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual('success', body['status'])
         self.assertEqual(self.home, body['data']['dave_home'])
         self.assertTrue(body['data']['setup'])
-        self.assertEqual(2, body['data']['schema_version'])
+        self.assertEqual(3, body['data']['schema_version'])
 
     def test_overview_shape(self) -> None:
         """Overview carries the seeded focus and sections.
@@ -244,7 +245,7 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(200, status)
         self.assertEqual(1, len(body['data']['parked']['open']))
         self.assertEqual(1, len(body['data']['parked']['retired']))
-        text = Path(self.home, 'parking-lot.md').read_text()
+        text = Path(self.home, '.local/render/parking-lot.md').read_text()
         self.assertIn('- [x] a parked idea', text)
         self.assertIn('_(retired', text)
 
@@ -300,7 +301,7 @@ class DashboardTests(unittest.TestCase):
         Returns:
             None.
         """
-        missions_path = Path(self.home, 'missions.json')
+        missions_path = Path(self.home, '.local/views/missions.json')
         meta = json.loads(missions_path.read_text())
         meta['ghost-mission'] = {'project': 'repo', 'ref': 'RM-1',
                                  'status': 'open', 'opened': '2026-01-01',
@@ -357,6 +358,63 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(1, len(mission['assignments']))
         status, body = self.get('/api/missions?slug=sso-rollout')
         self.assertIn('# Mission: sso-rollout', body['data']['brief'])
+
+    def test_sync_status_shape(self) -> None:
+        """GET /api/sync returns the journal/freshness/conflict shape.
+
+        Returns:
+            None.
+        """
+        status, body = self.get('/api/sync')
+        self.assertEqual(200, status)
+        data = body['data']
+        self.assertIn('journals', data)
+        self.assertIn('views', data)
+        self.assertIn('conflicts', data)
+        self.assertIn('conflict_list', data)
+        self.assertIn('syncthing', data)
+        dev = json.loads(
+            Path(self.home, '.local/device.json').read_text())['id']
+        devs = {j['dev'] for j in data['journals']}
+        self.assertIn(dev, devs)
+
+    def test_sync_resolve_bad_path(self) -> None:
+        """Resolving a path outside DAVE_HOME is a 400, not a file op.
+
+        Returns:
+            None.
+        """
+        status, _ = self.post(
+            '/api/sync/resolve',
+            {'file': '/etc/passwd.sync-conflict-20260919-120000-A',
+             'action': 'keep-local'})
+        self.assertEqual(400, status)
+        status, _ = self.post(
+            '/api/sync/resolve',
+            {'file': '../../etc/passwd.sync-conflict-20260919-120000-A',
+             'action': 'keep-remote'})
+        self.assertEqual(400, status)
+
+    def test_sync_resolve_keep_local(self) -> None:
+        """keep-local deletes the conflict copy and keeps the original.
+
+        Returns:
+            None.
+        """
+        conflict = Path(
+            self.home, 'priorities.sync-conflict-20260919-120000-A1B2C3.md')
+        original = Path(self.home, 'priorities.md')
+        before = original.read_text()
+        conflict.write_text('conflicting edit\n')
+        try:
+            status, body = self.post(
+                '/api/sync/resolve',
+                {'file': str(conflict), 'action': 'keep-local'})
+            self.assertEqual(200, status)
+            self.assertFalse(conflict.exists())
+            self.assertEqual(before, original.read_text())
+        finally:
+            conflict.unlink(missing_ok=True)
 
     def test_config_is_redacted(self) -> None:
         """Credential-shaped keys are masked in /api/config.
