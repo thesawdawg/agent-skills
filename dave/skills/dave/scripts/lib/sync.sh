@@ -253,22 +253,91 @@ EOF
 
 # ------------------------------------------------------------ guided setup
 #
-# The guided half of `sync setup`: find the daemon, borrow its api key from
-# config.xml, and offer to register the vault folder over the REST API. Every
-# step degrades to printed instructions — nothing here is required for sync to
-# work, it just saves the user a trip to the GUI.
+# The guided half of `sync setup`: find the daemon — installing and starting
+# it with the user when it isn't there — borrow its api key from config.xml,
+# and offer to register the vault folder over the REST API. Every step
+# degrades to printed instructions, and anything that changes the host
+# (package install, service start, folder registration) only runs on a
+# confirmed tty — --auto skips the folder prompt but never installs or
+# starts anything.
 
-_sync_install_hint() {
+# The one install command for this platform's package manager — single source
+# for the printed hint and the confirmed run. Empty when none is recognised.
+_sync_install_cmd() {
+  if   command -v apt     >/dev/null 2>&1; then printf '%s\n' "sudo apt install -y syncthing"
+  elif command -v apt-get >/dev/null 2>&1; then printf '%s\n' "sudo apt-get install -y syncthing"
+  elif command -v dnf     >/dev/null 2>&1; then printf '%s\n' "sudo dnf install -y syncthing"
+  elif command -v pacman  >/dev/null 2>&1; then printf '%s\n' "sudo pacman -S --needed --noconfirm syncthing"
+  elif command -v zypper  >/dev/null 2>&1; then printf '%s\n' "sudo zypper install -y syncthing"
+  else return 1
+  fi
+}
+
+# The install step of the walkthrough. Names the platform's one command; on a
+# tty offers to run it (sudo asks for the password itself), off a tty leaves
+# the manual steps. Either way the caller re-checks PATH afterwards.
+_sync_install_walk() {
+  local cmd=""
+  cmd="$(_sync_install_cmd)" || cmd=""
+  if [ -z "$cmd" ]; then
+    cat <<'EOF'
+syncthing is not installed (or not on PATH) and no known package manager was
+found — install it from https://syncthing.net, then re-run:
+  dave.sh sync setup
+EOF
+    return 0
+  fi
+  printf 'syncthing is not installed (or not on PATH) — this platform wants:\n  %s\n' "$cmd"
+  if _sync_confirm "run it now?"; then
+    if sh -c "$cmd"; then
+      echo "syncthing: installed"
+      return 0
+    fi
+    echo "syncthing: install failed — fix the package manager error above, then re-run: dave.sh sync setup"
+    return 0
+  fi
   cat <<'EOF'
-syncthing is not installed (or not on PATH). on linux:
-  debian/ubuntu:  sudo apt install syncthing     # newer builds: apt.syncthing.net
-  fedora:         sudo dnf install syncthing
-  arch:           sudo pacman -S syncthing
 then keep it running as a user service:
   systemctl --user enable --now syncthing
 wsl2 without systemd: `nohup syncthing &` or any supervisor — the gui lands on
 http://127.0.0.1:8384 either way. re-run `dave.sh sync setup` once it is up.
 EOF
+}
+
+# Start the daemon for this user: the packaged systemd user unit where one
+# exists, a detached background process where it doesn't (WSL without systemd
+# is the usual second case). Best-effort — the caller re-checks the api either
+# way.
+_sync_st_start() { # <bin>
+  if systemctl --user cat syncthing.service >/dev/null 2>&1; then
+    if systemctl --user enable --now syncthing; then
+      echo "syncthing: user service enabled and started"
+      return 0
+    fi
+    echo "syncthing: systemctl could not start it — trying a background process"
+  fi
+  nohup "$1" >/dev/null 2>&1 &
+  echo "syncthing: launched in the background"
+}
+
+# A just-started daemon needs a moment to write config.xml and open the gui —
+# both waits are bounded so setup never hangs on a daemon that stays down.
+_sync_st_wait_config() {
+  local i
+  for i in {1..10}; do
+    [ -n "$(_sync_st_config_xml)" ] && return 0
+    sleep 1
+  done
+  return 1
+}
+
+_sync_st_wait_api() { # <key> <base-url>
+  local i
+  for i in {1..10}; do
+    [ -n "$(_sync_st_myid "$1" "$2")" ] && return 0
+    sleep 1
+  done
+  return 1
 }
 
 # Where the daemon's config.xml lives. SYNCTHING_CONFIG may point at the file
@@ -361,35 +430,65 @@ _sync_guided_versioning() { # <key> <base-url> <auto>
 
 _sync_guided() {
   local auto="$1" bin="${SYNCTHING_BIN:-syncthing}"
+
+  # Stage 1 — the binary. The walkthrough can run the install on a confirmed
+  # tty; either way PATH is re-checked and the walk continues if it landed.
   if ! command -v "$bin" >/dev/null 2>&1; then
-    _sync_install_hint
-    return 0
+    _sync_install_walk
   fi
+  command -v "$bin" >/dev/null 2>&1 || return 0
   "$bin" --version 2>/dev/null | head -1 || true
 
-  # Credentials come from env/local config first; if none were saved yet,
-  # scrape the daemon's own config.xml — it always knows its api key.
-  local key url
+  # Stage 2 — a running daemon. Credentials come from env/local config first;
+  # else the daemon's own config.xml knows its api key. No config.xml at all
+  # means syncthing has never run here — the offer is to start it, not to
+  # hunt for a key that does not exist yet.
+  local key url xml creds myid started=0
   key="$(_sync_api_key)"; url="$(_sync_api_url)"
-  if [ -z "$key" ]; then
-    local xml creds
-    xml="$(_sync_st_config_xml)"
-    creds=""
-    [ -n "$xml" ] && creds="$(_sync_st_credentials "$xml")"
+  xml="$(_sync_st_config_xml)"
+  if [ -z "$key" ] && [ -z "$xml" ]; then
+    if _sync_confirm "syncthing has never run on this host — start it now?"; then
+      _sync_st_start "$bin"; started=1
+      _sync_st_wait_config || true
+      xml="$(_sync_st_config_xml)"
+    fi
+  fi
+  if [ -z "$key" ] && [ -n "$xml" ]; then
+    creds="$(_sync_st_credentials "$xml")" || creds=""
     if [ -n "$creds" ]; then
       key="${creds%%$'\t'*}"; url="${creds#*$'\t'}"
     fi
   fi
   if [ -z "$key" ]; then
-    cat <<'EOF'
+    if [ -z "$xml" ]; then
+      cat <<'EOF'
+syncthing has not run on this host yet — start it once so it writes its
+config and opens the gui, then re-run: dave.sh sync setup
+  systemd:          systemctl --user enable --now syncthing
+  no systemd (wsl): nohup syncthing &      (gui: http://127.0.0.1:8384)
+EOF
+    else
+      cat <<'EOF'
 syncthing: no api key found — register the folder by hand in the gui
   (http://127.0.0.1:8384 -> add folder), or export SYNCTHING_API_KEY and re-run.
 EOF
+    fi
     return 0
   fi
 
-  local myid
+  # Stage 3 — a reachable api. A configured-but-down daemon gets the same
+  # start offer; a daemon setup already launched gets a wait instead of a
+  # second prompt.
   myid="$(_sync_st_myid "$key" "$url")"
+  if [ -z "$myid" ]; then
+    if [ "$started" -eq 1 ]; then
+      _sync_st_wait_api "$key" "$url" || true
+    elif _sync_confirm "syncthing is not answering at $url — start it now?"; then
+      _sync_st_start "$bin"
+      _sync_st_wait_api "$key" "$url" || true
+    fi
+    myid="$(_sync_st_myid "$key" "$url")"
+  fi
   if [ -z "$myid" ]; then
     cat <<EOF
 syncthing: not reachable at $url — is the daemon running?

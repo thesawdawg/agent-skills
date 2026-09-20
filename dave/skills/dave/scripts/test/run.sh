@@ -1244,16 +1244,30 @@ STUB
 </configuration>
 STUB
 
-  # No daemon binary → install instructions, never a hang or a crash.
+  # No daemon binary → the walkthrough names this platform's one install
+  # command (a stub apt makes detection deterministic) plus the manual
+  # service steps, and never hangs or crashes.
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$mock/apt"; chmod +x "$mock/apt"
   local out
   out="$(env "PATH=$mock:$PATH" SYNCTHING_BIN=dave-no-such-syncthing \
-    "$DAVE" sync setup)"
+    "$DAVE" sync setup </dev/null)"
   assert_contains "missing daemon prints install hint" "$out" "not installed"
-  assert_contains "install hint names the package" "$out" "apt install syncthing"
+  assert_contains "install hint names the platform command" "$out" \
+    "sudo apt install -y syncthing"
+  assert_contains "off a tty it stops at instructions" "$out" "re-run"
 
-  # Daemon present but no api key anywhere → manual instructions.
+  # Daemon present but never run (no config.xml) and no tty to accept the
+  # start offer → the start-it-yourself instructions, not a phantom key hunt.
   out="$(env "PATH=$mock:$PATH" SYNCTHING_API_KEY="" \
-    SYNCTHING_CONFIG=/nonexistent "$DAVE" sync setup)"
+    SYNCTHING_CONFIG=/nonexistent "$DAVE" sync setup </dev/null)"
+  assert_contains "never-run daemon gets start instructions" "$out" "has not run"
+
+  # Daemon present with a config that carries no api key → manual gui route.
+  cat > "$DAVE_HOME/sthome/nokey.xml" <<'STUB'
+<configuration version="37"><gui enabled="true" tls="false"><address>127.0.0.1:8384</address></gui></configuration>
+STUB
+  out="$(env "PATH=$mock:$PATH" SYNCTHING_API_KEY="" \
+    "SYNCTHING_CONFIG=$DAVE_HOME/sthome/nokey.xml" "$DAVE" sync setup </dev/null)"
   assert_contains "no api key points at the gui" "$out" "no api key"
 
   # --auto registers the folder without prompting (tests are never a tty).
@@ -1304,6 +1318,123 @@ STUB
   assert_exit "status exits clean with a reachable daemon" 0 \
     env "PATH=$mock:$PATH" "STUB_CAPTURE=$cap" "STUB_VAULT=$DAVE_HOME" \
     "$DAVE" sync status
+}
+
+# The interactive half of the walkthrough — install offer, daemon start
+# offer, folder registration — needs a real tty. `script` provides a pty on
+# Linux; the tests skip cleanly where it is absent.
+#
+# Mock toolbox shared by both pty scenarios: sudo passes through, apt
+# "installs" the daemon stub onto PATH, systemctl always fails so the nohup
+# fallback is exercised, and the daemon stub writes a config.xml plus a
+# marker file the curl stub can answer on. The stub daemon is installed under
+# whatever name SYNCTHING_BIN asks for.
+_stage_tty_mocks() {
+  mock="$DAVE_HOME/mockbin" cap="$DAVE_HOME/post.json"
+  mkdir -p "$mock" "$DAVE_HOME/sthome"
+  cat > "$mock/sudo" <<'STUB'
+#!/usr/bin/env bash
+exec "$@"
+STUB
+  cat > "$mock/apt" <<'STUB'
+#!/usr/bin/env bash
+cp "$STUB_SRC" "$MOCK_BIN/$SYNCTHING_BIN"
+chmod +x "$MOCK_BIN/$SYNCTHING_BIN"
+touch "$MOCK_BIN/.apt-ran"
+STUB
+  cat > "$mock/systemctl" <<'STUB'
+#!/usr/bin/env bash
+exit 1
+STUB
+  cat > "$DAVE_HOME/syncthing-stub" <<'STUB'
+#!/usr/bin/env bash
+case "${1:-}" in
+  --version) echo "syncthing v1.27.0 (test stub)" ;;
+  *) mkdir -p "$STUB_STHOME"
+     printf '%s\n' '<configuration version="37"><gui enabled="true" tls="false"><address>127.0.0.1:8384</address><apikey>stub-key-123</apikey></gui></configuration>' \
+       > "$STUB_STHOME/config.xml"
+     touch "$STUB_STHOME/.daemon-ran" ;;
+esac
+STUB
+  # GET system/status fails until the daemon stub has "run" (marker file);
+  # folders reports registered once a POST has been captured.
+  cat > "$mock/curl" <<'STUB'
+#!/usr/bin/env bash
+url="${@: -1}"
+method="GET"; data=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X) method="$2"; shift 2 ;;
+    -d|--data*) data="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$method $url" in
+  GET*/rest/system/status)
+    [ -f "$STUB_STHOME/.daemon-ran" ] || exit 22
+    printf '{"myID":"STUB-ID-0001"}' ;;
+  GET*/rest/config/folders)
+    if [ -f "$STUB_CAPTURE" ]; then
+      printf '[{"id":"dave-vault","path":"%s","versioning":{"type":"staggered"}}]' "$STUB_VAULT"
+    else
+      printf '[]'
+    fi ;;
+  POST*/rest/config/folders) printf '%s' "$data" > "$STUB_CAPTURE"; printf '{}' ;;
+  PATCH*/rest/config/folders*) printf '{}' ;;
+  *) exit 22 ;;
+esac
+STUB
+  chmod +x "$mock/sudo" "$mock/apt" "$mock/systemctl" "$mock/curl" \
+           "$DAVE_HOME/syncthing-stub"
+}
+
+# Fresh install: no daemon binary anywhere. Answering yes three times walks
+# install → daemon start → folder registration without leaving the shell.
+test_sync_guided_tty_install() {
+  command -v script >/dev/null 2>&1 || { ok "pty tests need script(1) — skipped"; return 0; }
+  dave init >/dev/null
+  local mock cap; _stage_tty_mocks
+
+  local out
+  out="$(printf 'y\ny\ny\n' | script -qec \
+    "env PATH=$mock:\$PATH SYNCTHING_BIN=dave-st-bin SYNCTHING_API_KEY= \
+       SYNCTHING_CONFIG=$DAVE_HOME/sthome/config.xml \
+       STUB_SRC=$DAVE_HOME/syncthing-stub MOCK_BIN=$mock \
+       STUB_STHOME=$DAVE_HOME/sthome STUB_CAPTURE=$cap STUB_VAULT=$DAVE_HOME \
+       bash $DAVE sync setup" /dev/null)"
+  assert_contains "install offer ran the package manager" "$out" "syncthing: installed"
+  [ -f "$mock/.apt-ran" ] && ok "apt stub really ran" \
+    || no "apt stub really ran" "no marker"
+  assert_contains "start offer launched the daemon" "$out" "launched in the background"
+  [ -f "$DAVE_HOME/sthome/.daemon-ran" ] && ok "daemon stub really ran" \
+    || no "daemon stub really ran" "no marker"
+  assert_contains "walk ends with the folder registered" "$out" "registered 'dave-vault'"
+  assert_eq "POST carries the fixed folder id" "dave-vault" "$(jq -r .id "$cap")"
+  assert_eq "scraped api key is saved device-locally" "stub-key-123" \
+    "$(jq -r .sync.syncthing_api_key "$DAVE_HOME/.local/config.json")"
+}
+
+# Installed and configured, but the daemon is down: one yes starts it, the
+# next registers the folder.
+test_sync_guided_tty_start() {
+  command -v script >/dev/null 2>&1 || { ok "pty tests need script(1) — skipped"; return 0; }
+  dave init >/dev/null
+  local mock cap; _stage_tty_mocks
+  cp "$DAVE_HOME/syncthing-stub" "$mock/syncthing"
+  cat > "$DAVE_HOME/sthome/config.xml" <<'STUB'
+<configuration version="37"><gui enabled="true" tls="false"><address>127.0.0.1:8384</address><apikey>stub-key-123</apikey></gui></configuration>
+STUB
+
+  local out
+  out="$(printf 'y\ny\n' | script -qec \
+    "env PATH=$mock:\$PATH SYNCTHING_API_KEY= \
+       SYNCTHING_CONFIG=$DAVE_HOME/sthome/config.xml \
+       STUB_STHOME=$DAVE_HOME/sthome STUB_CAPTURE=$cap STUB_VAULT=$DAVE_HOME \
+       bash $DAVE sync setup" /dev/null)"
+  assert_contains "down daemon gets started, not just diagnosed" "$out" \
+    "launched in the background"
+  assert_contains "walk ends with the folder registered" "$out" "registered 'dave-vault'"
+  assert_eq "POST carries the fixed folder id" "dave-vault" "$(jq -r .id "$cap")"
 }
 
 test_help() {
