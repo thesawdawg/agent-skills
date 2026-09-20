@@ -13,7 +13,7 @@ TEMPLATES="$SCRIPT_DIR/../templates"
 # <plugin>/skills/dave/scripts -> <plugin>. Phase C reads agents/ from here.
 PLUGIN_ROOT="$(cd "$SCRIPT_DIR/../../.." 2>/dev/null && pwd || echo "")"
 
-DAVE_HOME="${DAVE_HOME:-$HOME/.dave}"
+DAVE_HOME="$(realpath -m -- "${DAVE_HOME:-$HOME/.dave}")"
 
 CONFIG="$DAVE_HOME/config.json"
 PRIORITIES="$DAVE_HOME/priorities.md"
@@ -83,7 +83,7 @@ require_init() {
   command -v jq >/dev/null 2>&1 || return 0
   # Views are derived: refresh them before anything reads one. On a
   # pre-journal tree this is a no-op and the schema check still exits 4.
-  _views_ensure
+  _views_ensure || return 1
   local v
   v="$(jq -r '.schema_version // 1' "$STATE" 2>/dev/null || echo 1)"
   case "$v" in

@@ -35,59 +35,153 @@ _journal_events() {
   [ -d "$JOURNAL_DIR" ] || return 0
   for f in "$JOURNAL_DIR"/*.jsonl; do
     [ -e "$f" ] || continue
+    case "$(basename "$f")" in *.sync-conflict-*) continue ;; esac
     jsonl_stream "$f"
   done
 }
 
-# Runs at the top of every command (inside require_init). The fast path is one
-# stat pass and a string compare; a rebuild happens only when the journals
-# changed or a view file is missing. A tree with no journal/ yet is pre-journal
-# — nothing to derive, and the schema check reports it as too old instead.
+# Pin one complete generation. Publication and pin acquisition share a short
+# lock; a per-generation lease keeps garbage collection away from active readers.
+_views_pin() {
+  [ -L "$LOCAL/current" ] || return 0
+  local publication_fd lease_fd generation
+  exec {publication_fd}>"$LOCAL/publication.lock"
+  flock -s "$publication_fd" || return 1
+  generation="$(readlink -f "$LOCAL/current")"
+  case "$generation" in "$LOCAL"/generations/gen.*) ;; *)
+    exec {publication_fd}>&-; return 1 ;;
+  esac
+  exec {lease_fd}>"$generation/.lease" || { exec {publication_fd}>&-; return 1; }
+  flock -s "$lease_fd"
+  exec {publication_fd}>&-
+  if [ -n "${_VIEW_LEASE_FD:-}" ]; then exec {_VIEW_LEASE_FD}>&-; fi
+  _VIEW_LEASE_FD="$lease_fd"
+  _views_paths "$generation"
+}
+
+# All derived paths move together, both when staging and when pinning readers.
+_views_paths() {
+  VIEWS="$1/views"; RENDER="$1/render"
+  STATE="$VIEWS/state.json"; NOTES="$VIEWS/notes.json"
+  COMMITMENTS="$VIEWS/commitments.json"; SESSIONS="$VIEWS/sessions.jsonl"
+  ASSIGNMENTS="$VIEWS/assignments.jsonl"; MISSIONS_JSON="$VIEWS/missions.json"
+  PROJECTS_JSON="$VIEWS/projects.json"
+  PARKING="$RENDER/parking-lot.md"; LOGDIR="$RENDER/log"
+}
+
+# Runs before state reads. Compare the signature of the input actually reduced,
+# not the files that happened to exist at the end of a previous rebuild.
 _views_ensure() {
   [ -d "$JOURNAL_DIR" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0
+  command -v flock >/dev/null 2>&1 || { echo "dave: flock is required for safe state access" >&2; return 1; }
+  _views_pin || return 1
   local stored="" missing=0 f
   [ -f "$VIEWS/.fingerprint" ] && stored="$(cat "$VIEWS/.fingerprint")"
-  for f in state.json missions.json notes.json commitments.json \
-           sessions.jsonl assignments.jsonl \
-           log.json parked.json projects.json; do
+  for f in state.json missions.json notes.json commitments.json sessions.jsonl \
+           assignments.jsonl log.json parked.json projects.json; do
     [ -f "$VIEWS/$f" ] || { missing=1; break; }
   done
-  if [ "$missing" -eq 1 ] || [ "$(_journal_fingerprint)" != "$stored" ]; then
-    views_rebuild
+  if [ "$missing" -eq 1 ] || [ ! -L "$LOCAL/current" ] || \
+     [ "$(_journal_fingerprint)" != "$stored" ]; then
+    views_rebuild || return 1
   fi
 }
 
-# Fold the whole journal into the six view files, each written atomically.
+# Publish a generation under the short publication lock, then collect only
+# generations with no reader lease. Old legacy cache directories are preserved
+# once for recovery; source journals and hand-edited documents never move.
+_views_publish() {
+  local generation="$1" publication_fd f link old lease_fd
+  exec {publication_fd}>"$LOCAL/publication.lock"
+  flock -x "$publication_fd" || return 1
+  for f in views render; do
+    if [ -d "$LOCAL/$f" ] && [ ! -L "$LOCAL/$f" ]; then
+      old="$(mktemp -d "$LOCAL/legacy-$f.XXXXXX")"
+      mv "$LOCAL/$f" "$old/$f" || return 1
+    fi
+    link="$LOCAL/.link-$f-$$"
+    ln -s "current/$f" "$link" && mv -Tf "$link" "$LOCAL/$f" || return 1
+  done
+  link="$LOCAL/.current-$$"
+  ln -s "generations/$(basename "$generation")" "$link" && \
+    mv -Tf "$link" "$LOCAL/current" || return 1
+  for old in "$LOCAL"/generations/gen.*; do
+    [ -d "$old" ] && [ "$old" != "$generation" ] || continue
+    exec {lease_fd}>"$old/.lease"
+    if flock -xn "$lease_fd"; then rm -rf -- "$old"; fi
+    exec {lease_fd}>&-
+  done
+  exec {publication_fd}>&-
+}
+
+# Called in a locked subshell: staging never repoints the caller's live paths.
+_views_build_locked() (
+  local created tmp before after attempt stable=0
+  tmp="$(mktemp -d "$LOCAL/generations/.staging.XXXXXX")" || return 1
+  trap 'rm -rf -- "$tmp"' EXIT
+  for attempt in 1 2 3; do
+    before="$(_journal_fingerprint)" || return 1
+    if declare -F _journal_snapshot >/dev/null; then
+      _journal_snapshot "$tmp/events.jsonl" "$tmp/integrity.json" || return 1
+    else
+      _journal_events > "$tmp/events.jsonl" || return 1
+      printf '[]\n' > "$tmp/integrity.json"
+    fi
+    after="$(_journal_fingerprint)" || return 1
+    if [ "$before" = "$after" ]; then stable=1; break; fi
+  done
+  if [ "$stable" -ne 1 ]; then
+    echo "dave: journals changed during all three snapshot attempts; views remain stale" >&2
+    return 1
+  fi
+  if declare -F _integrity_store >/dev/null; then
+    _integrity_store "$tmp/integrity.json" || return 1
+  fi
+  if ! jq -e 'all(.[]; .severity != "error")' "$tmp/integrity.json" >/dev/null; then
+    echo "dave: journal integrity errors; inspect sync status --json" >&2
+    return 1
+  fi
+  created="$(json_get "$DEVICE_FILE" '.created' "$(now_iso)")"
+  jq -s -f "$DAVE_LIB_DIR/views.jq" --arg created "$created" \
+    --argjson schema_version "$SCHEMA_VERSION" "$tmp/events.jsonl" \
+    > "$tmp/out.json" || return 1
+  _views_paths "$tmp"
+  mkdir -p "$VIEWS" "$RENDER/log"
+  local f
+  for f in state missions notes commitments log parked projects; do
+    jq ".$f" "$tmp/out.json" > "$VIEWS/$f.json" || return 1
+  done
+  for f in sessions assignments; do
+    jq -c ".${f}[]" "$tmp/out.json" > "$VIEWS/$f.jsonl" || return 1
+  done
+  # Forward-compatible replay diagnostics are owned by the reducer.
+  jq '.identity_diagnostics // {}' "$tmp/out.json" > "$VIEWS/identity-diagnostics.json" || return 1
+  cp "$tmp/integrity.json" "$VIEWS/integrity.json" || return 1
+  jq '.diagnostics // []' "$tmp/out.json" > "$VIEWS/diagnostics.json" || return 1
+  printf '%s' "$before" > "$VIEWS/.fingerprint"
+  render_views || return 1
+  rm -f "$tmp/events.jsonl" "$tmp/out.json" "$tmp/integrity.json"
+  : > "$tmp/.lease"
+  local generation="$LOCAL/generations/gen.${tmp##*.}"
+  mv "$tmp" "$generation" || return 1
+  _views_publish "$generation" || return 1
+)
+
+# Serialize local builders. Remote arrivals can still occur, so the builder
+# verifies its input independently and never stamps a newer source signature.
 views_rebuild() {
   need_jq
-  mkdir -p "$VIEWS" "$LOCAL"
-  local created tmp
-  # `created` can't come from events when the journal is empty; the device's
-  # birth stamp is the closest thing the tree has to a creation time.
-  created="$(json_get "$DEVICE_FILE" '.created' "$(now_iso)")"
-  tmp="$(mktemp -d "$LOCAL/.views.XXXXXX")"
-  _journal_events | jq -s -f "$DAVE_LIB_DIR/views.jq" \
-    --arg created "$created" --argjson schema_version "$SCHEMA_VERSION" \
-    > "$tmp/out.json" || { rm -rf "$tmp"; die "view rebuild failed"; }
-  jq '.state'       "$tmp/out.json" > "$tmp/state.json"
-  jq '.missions'    "$tmp/out.json" > "$tmp/missions.json"
-  jq '.notes'       "$tmp/out.json" > "$tmp/notes.json"
-  jq '.commitments' "$tmp/out.json" > "$tmp/commitments.json"
-  jq '.log'         "$tmp/out.json" > "$tmp/log.json"
-  jq '.parked'      "$tmp/out.json" > "$tmp/parked.json"
-  jq '.projects'    "$tmp/out.json" > "$tmp/projects.json"
-  jq -c '.sessions[]'    "$tmp/out.json" > "$tmp/sessions.jsonl"
-  jq -c '.assignments[]' "$tmp/out.json" > "$tmp/assignments.jsonl"
-  local f
-  for f in state.json missions.json notes.json commitments.json \
-           log.json parked.json projects.json \
-           sessions.jsonl assignments.jsonl; do
-    mv "$tmp/$f" "$VIEWS/$f"
-  done
-  _journal_fingerprint > "$VIEWS/.fingerprint"
-  rm -rf "$tmp"
-  # The markdown a human would have written is rendered last, from the views
-  # just written — log/<date>.md and parking-lot.md under .local/render/.
-  render_views
+  command -v flock >/dev/null 2>&1 || { echo "dave: flock is required for rebuilding views" >&2; return 1; }
+  mkdir -p "$LOCAL/generations"
+  local rebuild_fd result=0
+  exec {rebuild_fd}>"$LOCAL/rebuild.lock"
+  flock -x "$rebuild_fd" || return 1
+  _views_build_locked || result=$?
+  exec {rebuild_fd}>&-
+  if [ "$result" -ne 0 ]; then
+    echo "dave: view rebuild failed; last complete generation retained" >&2
+    return "$result"
+  fi
+  _views_pin
 }

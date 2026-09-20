@@ -12,7 +12,11 @@ at the tree root.
 
 from __future__ import annotations
 
+import fcntl
 import json
+import threading
+from contextlib import contextmanager
+from collections.abc import Iterator
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -43,6 +47,57 @@ class StateReader:
             dave_home: Absolute path to the state tree.
         """
         self.home = Path(dave_home)
+        self._snapshot = threading.local()
+
+    @contextmanager
+    def snapshot(self) -> Iterator[None]:
+        """Pin a generation lazily for one request, releasing its lease on exit.
+
+        Returns:
+            A context in which all derived reads use the same generation.
+        """
+        self._snapshot.active = True
+        self._snapshot.generation = None
+        self._snapshot.lease = None
+        try:
+            yield
+        finally:
+            lease = self._snapshot.lease
+            if lease is not None:
+                lease.close()
+            self._snapshot.active = False
+            self._snapshot.generation = None
+            self._snapshot.lease = None
+
+    def _derived_path(self, name: str) -> Path:
+        """Resolve derived paths under a leased generation for this request.
+
+        Args:
+            name: A vault-relative filename.
+
+        Returns:
+            The pinned filename, or its legacy location before cache migration.
+        """
+        if not name.startswith((".local/views/", ".local/render/")):
+            return self.home / name
+        if not getattr(self._snapshot, "active", False):
+            return self.home / name
+        generation = self._snapshot.generation
+        if generation is None:
+            local = self.home / ".local"
+            try:
+                with (local / "publication.lock").open("rb") as publication:
+                    fcntl.flock(publication, fcntl.LOCK_SH)
+                    generation = (local / "current").resolve(strict=True)
+                    if generation.parent != (local / "generations").resolve():
+                        raise OSError("invalid generation location")
+                    lease = (generation / ".lease").open("rb")
+                    fcntl.flock(lease, fcntl.LOCK_SH)
+                    self._snapshot.generation = generation
+                    self._snapshot.lease = lease
+            except FileNotFoundError:
+                return self.home / name
+        return generation / name.removeprefix(".local/")
 
     def _read_text(self, name: str) -> str:
         """Read a file under DAVE_HOME, or empty string when absent.
@@ -54,7 +109,7 @@ class StateReader:
             The file's text, or "" when missing.
         """
         try:
-            return (self.home / name).read_text(encoding="utf-8", errors="replace")
+            return self._derived_path(name).read_text(encoding="utf-8", errors="replace")
         except OSError:
             return ""
 
