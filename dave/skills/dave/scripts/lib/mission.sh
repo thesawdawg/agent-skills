@@ -112,6 +112,7 @@ cmd_mission() {
     close)  _mission_close "$@" ;;
     assign) _mission_assign "$@" ;;
     record) _mission_record "$@" ;;
+    repair) _mission_repair "$@" ;;
     status) _mission_status "$@" ;;
     pack)   _mission_pack "$@" ;;
     *) die "unknown mission subcommand: $sub (new|show|list|open|close|assign|record|status|pack)" ;;
@@ -222,18 +223,30 @@ _mission_assignments() {
   jsonl_fold "$ASSIGNMENTS" 'map(select(type == "object" and .mission == $m))' --arg m "$1"
 }
 
-# Fold the two event types into one row per charge: the last record event wins,
-# and a charge with none is still open.
+# Resolve a mission assignment's familiar id to its immutable entity identity.
+# The lookup is performed immediately before a grade is appended so a stored
+# grade cannot later follow a reused display alias.
+_mission_entity_id() {
+  local mission="$1" reference="$2" matches count
+  matches="$(_mission_assignments "$mission" | jq -c --arg ref "$reference" \
+    '[.[] | select(.entity_id == $ref or .id == $ref)]')"
+  count="$(printf '%s' "$matches" | jq 'length')"
+  [ "$count" -gt 0 ] || die "no such assignment: $reference (try: mission status)"
+  [ "$count" -eq 1 ] || die "ambiguous assignment alias: $reference (use entity_id)"
+  printf '%s\n' "$matches" | jq -r '.[0].entity_id'
+}
+
+# One row per charge. The reducer already folds each grade onto the assignment
+# it named by entity identity, so the verdict is read from the row itself; a
+# charge that was never graded still reads as open.
 _mission_rows() {
   _mission_assignments "$1" | jq -c '
-      (map(select(.type == "assign"))) as $a
-    | (map(select(.type == "record"))) as $r
-    | $a | map(. as $x
-        | ($r | map(select(.id == $x.id)) | last) as $rec
-        | {id: $x.id, agent: $x.agent, model: ($x.model // ""), charge: $x.charge,
-           ref: ($x.ref // ""), assigned: $x.ts,
-           verdict: ($rec.verdict // null), summary: ($rec.summary // ""),
-           returned: ($rec.ts // null)})'
+      map(select(.type == "assign"))
+    | map({id: .id, entity_id: (.entity_id // ""), agent: .agent,
+           model: (.model // ""), charge: .charge,
+           ref: (.ref // ""), assigned: .ts,
+           verdict: (.verdict // null), summary: (.summary // ""),
+           returned: (.returned // null)})'
 }
 
 _mission_open_assignments() {
@@ -262,19 +275,24 @@ _mission_assign() {
   _mission_require "$mission"
   _mission_register "$mission"
 
-  local meta n id project
+  local meta n id project entity_id effective_id
   meta="$(_mission_meta "$mission")"
   project="$(printf '%s' "$meta" | jq -r '.project // ""')"
   [ -n "$ref" ] || ref="$(printf '%s' "$meta" | jq -r '.ref // ""')"
   n="$(_mission_assignments "$mission" | jq '[.[] | select(.type == "assign")] | length')"
   id="${mission}#$(( n + 1 ))"
+  entity_id="$(entity_id_new)"
 
   event_append "mission.assign" "$(jq -nc --arg id "$id" --arg m "$mission" --arg a "$agent" \
     --arg model "$model" --arg charge "$charge" --arg ref "$ref" --arg p "$project" \
-    --arg ts "$(now_iso)" \
-    '{type:"assign", id:$id, mission:$m, agent:$a, model:$model, charge:$charge,
+    --arg entity_id "$entity_id" --arg ts "$(now_iso)" \
+    '{type:"assign", id:$id, entity_id:$entity_id, mission:$m, agent:$a, model:$model, charge:$charge,
       ref:$ref, project:$p, ts:$ts}')"
-  echo "$id"
+  effective_id="$(jsonl_fold "$ASSIGNMENTS" 'map(select(.entity_id == $eid)) | .[0].id' --arg eid "$entity_id" 2>/dev/null | jq -r . 2>/dev/null || true)"
+  [ -n "$effective_id" ] || effective_id="$id"
+  # Keep the historical one-token stdout contract for scripts; the stable
+  # identity is available in the assignment JSON and dashboard selectors.
+  echo "$effective_id"
 }
 
 _mission_record() {
@@ -292,14 +310,30 @@ _mission_record() {
   case " $MISSION_VERDICTS " in *" $verdict "*) ;; *) die "verdict must be one of: $MISSION_VERDICTS" ;; esac
   # An orphan verdict is worse than a missing one: it looks like an audit trail
   # and isn't attached to anything.
-  local mission="${id%%#*}"
-  _mission_assignments "$mission" | jq -e --arg id "$id" \
-    'any(.[]; .type == "assign" and .id == $id)' >/dev/null 2>&1 \
-    || die "no such assignment: $id (try: mission status)"
-  event_append "mission.grade" "$(jq -nc --arg id "$id" --arg m "$mission" --arg v "$verdict" \
-    --arg s "$summary" --arg ts "$(now_iso)" \
-    '{type:"record", id:$id, mission:$m, verdict:$v, summary:$s, ts:$ts}')"
+  local mission="${id%%#*}" entity_id
+  entity_id="$(_mission_entity_id "$mission" "$id")"
+  event_append "mission.grade" "$(jq -nc --arg id "$id" --arg entity_id "$entity_id" \
+    --arg m "$mission" --arg v "$verdict" --arg s "$summary" --arg ts "$(now_iso)" \
+    '{type:"record", id:$id, entity_id:$entity_id, mission:$m, verdict:$v, summary:$s, ts:$ts}')"
   echo "$id: $verdict"
+}
+
+# Record an explicit repair for an ambiguous legacy assignment mutation. The
+# source assignment/grade line stays immutable and replay applies the mapping.
+_mission_repair() {
+  [ $# -ge 2 ] || die "usage: mission repair <original-event-id> <entity_id>"
+  local original="$1" entity_id="$2" mission="${3:-}"
+  [ -n "$entity_id" ] || die "entity_id is required"
+  if [ -n "$mission" ]; then
+    _mission_entity_id "$(slugify "$mission")" "$entity_id" >/dev/null
+  else
+    jsonl_fold "$ASSIGNMENTS" 'any(.[]; .entity_id == $eid)' --arg eid "$entity_id" \
+      | jq -e . >/dev/null 2>&1 || die "no such assignment entity_id: $entity_id"
+  fi
+  event_append "entity.repair" "$(jq -nc --arg original "$original" \
+    --arg entity_id "$entity_id" '{original_event_id:$original, entity_id:$entity_id,
+      entity_type:"assignment"}')"
+  echo "repair recorded: $original -> $entity_id"
 }
 
 _mission_status() {
@@ -314,9 +348,7 @@ _mission_status() {
   fi
   # Every mission's outstanding charges, oldest first: what is still owed.
   jsonl_fold "$ASSIGNMENTS" '
-      (map(select(.type == "assign"))) as $a
-    | (map(select(.type == "record") | .id)) as $done
-    | $a | map(select(([.id] | inside($done)) | not))
+      map(select(.type == "assign" and .verdict == null))
     | sort_by(.ts)
     | if length == 0 then ["(nothing outstanding)"] else
         map("\(.id)  \(.agent)  — \(.charge | if length > 50 then .[0:47] + "..." else . end)")

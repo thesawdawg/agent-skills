@@ -275,24 +275,19 @@ class StateReader:
     def assignment_rows(self) -> list[dict[str, Any]]:
         """assignments.jsonl folded into one row per charge.
 
-        Mirrors lib/mission.sh `_mission_rows`: assign events are the rows;
-        the last record event with the same id supplies the verdict.
+        Mirrors lib/mission.sh `_mission_rows`: assign events are the rows, and
+        the reducer has already folded each grade onto the assignment it named
+        by entity identity, so the verdict is read from the row itself.
 
         Returns:
-            Rows with id, mission, agent, model, charge, ref, project,
-            assigned, verdict, summary, returned.
+            Rows with id, entity_id, mission, agent, model, charge, ref,
+            project, assigned, verdict, summary, returned.
         """
         events = self._read_jsonl(f"{_VIEWS}/assignments.jsonl")
-        assigns = [e for e in events if e.get("type") == "assign"]
-        records = [e for e in events if e.get("type") == "record"]
-        rows = []
-        for a in assigns:
-            rec = next(
-                (r for r in reversed(records) if r.get("id") == a.get("id")),
-                None,
-            )
-            rows.append({
+        return [
+            {
                 "id": a.get("id"),
+                "entity_id": a.get("entity_id", ""),
                 "mission": a.get("mission", ""),
                 "agent": a.get("agent", ""),
                 "model": a.get("model", ""),
@@ -300,11 +295,13 @@ class StateReader:
                 "ref": a.get("ref", ""),
                 "project": a.get("project", ""),
                 "assigned": a.get("ts"),
-                "verdict": rec.get("verdict") if rec else None,
-                "summary": rec.get("summary", "") if rec else "",
-                "returned": rec.get("ts") if rec else None,
-            })
-        return rows
+                "verdict": a.get("verdict"),
+                "summary": a.get("summary", ""),
+                "returned": a.get("returned"),
+            }
+            for a in events
+            if a.get("type") == "assign"
+        ]
 
     def missions(self) -> dict[str, Any]:
         """missions.json.

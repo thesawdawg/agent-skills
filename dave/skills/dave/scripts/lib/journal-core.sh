@@ -40,6 +40,26 @@ device_id() {
 # One session = one dave.sh invocation unless the caller names a wider scope.
 session_id() { printf '%s\n' "${DAVE_SESSION_ID:-$PPID}"; }
 
+# entity_id_new — mint the opaque identity assigned to a newly created
+# promise or mission charge.  It is deliberately independent of a derived
+# view's numeric alias: two offline writers may choose the same c1/m#1 label,
+# but they must never choose the same entity identity.
+entity_id_new() {
+  local random
+  random="$(od -An -N16 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')" \
+    || die "cannot obtain collision-resistant randomness for entity identity"
+  [ "${#random}" -eq 32 ] || die "cannot obtain collision-resistant randomness for entity identity"
+  printf 'ent_%s\n' "$random"
+}
+
+# entity_id_is_valid — validate an identity before placing it in an event.
+entity_id_is_valid() {
+  case "${1:-}" in
+    ent_[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]) ;;
+    *) return 1 ;;
+  esac
+}
+
 # event_append <type> <data-json> — the single write path for structured state.
 #
 # seq is read-incremented inside the same flock region as the append, so two

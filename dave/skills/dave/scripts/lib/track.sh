@@ -92,8 +92,24 @@ cmd_promise() {
     keep) _promise_close "$1" kept ;;
     miss) _promise_close "$1" missed ;;
     move) _promise_move "$@" ;;
+    repair) _promise_repair "$@" ;;
     *) die "unknown promise subcommand: $sub (add|list|keep|miss|move)" ;;
   esac
+}
+
+# Resolve a familiar display alias to the immutable identity stored in a view.
+# An unsuffixed alias is accepted only when it names one row; this is the point
+# at which a user's selection becomes durable event data.
+_promise_entity_id() {
+  local reference="${1:-}" matches count
+  [ -n "$reference" ] || die "a promise id or entity_id is required"
+  [ -f "$COMMITMENTS" ] || die "no commitments recorded"
+  matches="$(jq -c --arg ref "$reference" \
+    '[.[] | select(.entity_id == $ref or .id == $ref)]' "$COMMITMENTS")"
+  count="$(printf '%s' "$matches" | jq 'length')"
+  [ "$count" -gt 0 ] || die "no such commitment: $reference (try: promise list)"
+  [ "$count" -eq 1 ] || die "ambiguous commitment alias: $reference (use entity_id)"
+  printf '%s\n' "$matches" | jq -r '.[0].entity_id'
 }
 
 _promise_any() {
@@ -123,16 +139,20 @@ _promise_add() {
   due_norm="$(date -d "$due" +%F 2>/dev/null)" || die "unreadable date: $due"
   [ -n "$project" ] || project="$(_focus_project_for "${ref:-}")"
 
-  local id
-  # Collision-suffixed ids (`c5~<dev>`) still count toward the max numeric part.
+  local id entity_id effective_id
+  # The display alias remains familiar, but identity is minted before append and
+  # is never derived from this view-derived counter.
   id="c$(( $(jq -r '[.[].id | ltrimstr("c") | split("~")[0] | tonumber? // 0] | max // 0' "$COMMITMENTS" 2>/dev/null || echo 0) + 1 ))"
+  entity_id="$(entity_id_new)"
   event_append "promise.add" "$(jq -nc \
     --arg id "$id" --arg who "$who" --arg what "$what" \
     --arg due "$due_norm" --arg ref "$ref" --arg project "$project" \
-    --arg ts "$(now_iso)" \
-    '{id:$id, who:$who, what:$what, due:$due, ref:$ref, project:$project,
+    --arg entity_id "$entity_id" --arg ts "$(now_iso)" \
+    '{id:$id, entity_id:$entity_id, who:$who, what:$what, due:$due, ref:$ref, project:$project,
       status:"open", created:$ts, closed:null, moved:[]}')"
-  echo "$id: promised $who — $what, due $due_norm"
+  effective_id="$(jq -r --arg eid "$entity_id" '.[] | select(.entity_id == $eid) | .id' "$COMMITMENTS" 2>/dev/null || true)"
+  [ -n "$effective_id" ] || effective_id="$id"
+  echo "$effective_id: promised $who — $what, due $due_norm (entity_id $entity_id)"
 }
 
 _promise_list() {
@@ -172,11 +192,11 @@ _promise_list() {
 
 _promise_close() {
   [ -n "${1:-}" ] || die "usage: promise keep|miss <id>"
-  _promise_require "$1"
+  local entity_id; entity_id="$(_promise_entity_id "$1")"
   local ev="promise.keep"; [ "$2" = "missed" ] && ev="promise.miss"
   event_append "$ev" "$(jq -nc \
-    --arg id "$1" --arg s "$2" --arg ts "$(now_iso)" \
-    '{id:$id, status:$s, ts:$ts}')"
+    --arg id "$1" --arg entity_id "$entity_id" --arg s "$2" --arg ts "$(now_iso)" \
+    '{id:$id, entity_id:$entity_id, status:$s, ts:$ts}')"
   echo "$1: $2"
 }
 
@@ -185,13 +205,28 @@ _promise_close() {
 # looking like one.
 _promise_move() {
   [ $# -ge 2 ] || die "usage: promise move <id> <new-due>"
-  _promise_require "$1"
+  local entity_id; entity_id="$(_promise_entity_id "$1")"
   local due_norm
   due_norm="$(date -d "$2" +%F 2>/dev/null)" || die "unreadable date: $2"
   event_append "promise.move" "$(jq -nc \
-    --arg id "$1" --arg due "$due_norm" --arg ts "$(now_iso)" \
-    '{id:$id, due:$due, ts:$ts}')"
+    --arg id "$1" --arg entity_id "$entity_id" --arg due "$due_norm" --arg ts "$(now_iso)" \
+    '{id:$id, entity_id:$entity_id, due:$due, ts:$ts}')"
   local times
   times="$(jq -r --arg id "$1" '.[] | select(.id == $id) | (.moved | length)' "$COMMITMENTS")"
   echo "$1: now due $due_norm (moved $times time$( [ "$times" = "1" ] || echo s ))"
+}
+
+# Record an explicit repair for an ambiguous legacy mutation. The original
+# journal line remains untouched; replay joins the original envelope id to the
+# selected stable entity.
+_promise_repair() {
+  [ $# -ge 2 ] || die "usage: promise repair <original-event-id> <entity_id>"
+  local original="$1" entity_id="$2"
+  [ -n "$entity_id" ] || die "entity_id is required"
+  jq -e --arg eid "$entity_id" 'any(.[]; .entity_id == $eid)' "$COMMITMENTS" \
+    >/dev/null 2>&1 || die "no such commitment entity_id: $entity_id"
+  event_append "entity.repair" "$(jq -nc --arg original "$original" \
+    --arg entity_id "$entity_id" '{original_event_id:$original, entity_id:$entity_id,
+      entity_type:"promise"}')"
+  echo "repair recorded: $original -> $entity_id"
 }

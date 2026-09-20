@@ -1349,7 +1349,7 @@ test_views_empty() {
   dave init >/dev/null
   local s="$DAVE_HOME/.local/views/state.json"
   assert_eq "empty journal yields all state keys" \
-    "active_mission created drift_events focus focus_stack last_brief last_intake schema_version" \
+    "active_mission created drift_events focus focus_stack identity_diagnostics last_brief last_intake schema_version" \
     "$(jq -r 'keys | join(" ")' "$s")"
   assert_eq "empty journal yields an empty stack" "[]" "$(jq -c .focus_stack "$s")"
   assert_eq "empty journal yields no drift" "[]" "$(jq -c .drift_events "$s")"
