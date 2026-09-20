@@ -221,7 +221,11 @@ _migrate_split_config() {
 cmd_migrate() {
   need_jq
   [ -f "$CONFIG" ] || exit 3
-  mkdir -p "$LOCAL" "$VIEWS" "$JOURNAL_DIR" "$RENDER/log"
+  mkdir -p "$LOCAL"
+  # Protect local state and future migration archives before importing or
+  # registering anything. The shared helper also preserves custom rules.
+  _sync_prepare_ignores || die "migrate: could not prepare .stignore"
+  mkdir -p "$VIEWS" "$JOURNAL_DIR" "$RENDER/log"
   device_id >/dev/null
 
   local has_journal=0 has_legacy=0 migrated_dir_exists=0
@@ -317,10 +321,6 @@ cmd_migrate() {
     elif [ -f "$DAVE_HOME/scan-cache.json" ]; then
       mv "$DAVE_HOME/scan-cache.json" "$dest/"
       moved+=("scan-cache.json")
-    fi
-    # Syncthing must not share the archive.
-    if [ -f "$DAVE_HOME/.stignore" ] && ! grep -qx '.migrated-*/' "$DAVE_HOME/.stignore"; then
-      printf '.migrated-*/\n' >> "$DAVE_HOME/.stignore"
     fi
   fi
   # The marker dir doubles as the "already migrated" flag — it must exist even

@@ -1137,8 +1137,9 @@ test_sync() {
   assert_contains "setup prints the checklist" "$out" "Syncthing folder"
   assert_contains "checklist wants the same Folder ID" "$out" "same Folder ID"
   [ -f "$DAVE_HOME/.stignore" ] && ok "setup writes .stignore" || no "setup writes .stignore" "missing"
+  # Root-anchored so the rule cannot be read as a match on a nested .local.
   assert_contains ".stignore keeps .local device-side" \
-    "$(cat "$DAVE_HOME/.stignore")" ".local/"
+    "$(cat "$DAVE_HOME/.stignore")" "/.local"
   assert_eq "setup flips enabled in local config" "true" \
     "$(jq -r .sync.enabled "$DAVE_HOME/.local/config.json")"
   assert_eq "shared config stays out of sync bookkeeping" "null" \

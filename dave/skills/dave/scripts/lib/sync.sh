@@ -32,6 +32,117 @@ cmd_sync() {
 
 # --------------------------------------------------------------------- setup
 
+# The managed rules must be first: Syncthing evaluates ignore patterns in
+# order, so a user's later negation must not expose device-local state or a
+# migration archive. Everything outside this block belongs to the user and is
+# copied byte-for-byte into the replacement file.
+_SYNC_IGNORE_BEGIN='// BEGIN DAVE MANAGED IGNORE RULES'
+_SYNC_IGNORE_END='// END DAVE MANAGED IGNORE RULES'
+
+_sync_prepare_ignores() {
+  local file="$DAVE_HOME/.stignore" tmp mode custom_tmp temp_dir escape_line=""
+  [ -d "$DAVE_HOME" ] || mkdir -p "$DAVE_HOME" || {
+    echo "sync: cannot create vault directory for .stignore" >&2
+    return 1
+  }
+  if [ -e "$file" ] && [ ! -f "$file" ]; then
+    echo "sync: .stignore exists but is not a regular file" >&2
+    return 1
+  fi
+
+  # Count exact marker lines before creating a replacement. Incomplete or
+  # duplicated ownership markers are ambiguous; refusing here leaves the
+  # user's file untouched instead of silently moving their rules.
+  if [ -f "$file" ]; then
+    if ! awk -v begin="$_SYNC_IGNORE_BEGIN" -v end="$_SYNC_IGNORE_END" '
+      $0 == begin { begins++; invalid=(depth != 0); depth++; next }
+      $0 == end { ends++; invalid=(depth != 1); depth--; next }
+      END {
+        if (invalid || begins > 1 || ends > 1 || depth != 0) exit 1
+      }
+    ' "$file" >/dev/null 2>&1; then
+      echo "sync: refusing malformed managed markers in $file" >&2
+      return 1
+    fi
+  fi
+
+  # Syncthing treats #escape=... as a file directive only on line one. Keep
+  # that optional header ahead of our managed block; moving it below a pattern
+  # would change how every subsequent pattern is parsed.
+  if [ -f "$file" ]; then
+    escape_line="$(head -n 1 "$file")"
+    case "$escape_line" in
+      '#escape='*) ;;
+      *) escape_line="" ;;
+    esac
+  fi
+
+  # Extracting custom content into a sibling temporary file lets every read,
+  # parse, and write complete before the final rename. The original remains in
+  # place on any error, including a malformed source or a failed chmod.
+  temp_dir="$LOCAL"
+  [ -d "$temp_dir" ] || temp_dir="$DAVE_HOME"
+  custom_tmp="$(mktemp "$temp_dir/.stignore.custom.XXXXXX")" || {
+    echo "sync: cannot create .stignore temporary file" >&2
+    return 1
+  }
+  if [ -f "$file" ]; then
+    if ! awk -v begin="$_SYNC_IGNORE_BEGIN" -v end="$_SYNC_IGNORE_END" '
+      NR == 1 && $0 ~ /^#escape=/ { next }
+      $0 == begin { inside=1; next }
+      $0 == end { inside=0; next }
+      !inside { print }
+    ' "$file" > "$custom_tmp"; then
+      rm -f "$custom_tmp"
+      echo "sync: cannot read $file" >&2
+      return 1
+    fi
+  fi
+
+  tmp="$(mktemp "$temp_dir/.stignore.XXXXXX")" || {
+    rm -f "$custom_tmp"
+    echo "sync: cannot create atomic .stignore temporary file" >&2
+    return 1
+  }
+  if ! {
+    [ -z "$escape_line" ] || printf '%s\n' "$escape_line"
+    printf '%s\n' \
+      "$_SYNC_IGNORE_BEGIN" \
+      '/.local' \
+      '/.migrated-*' \
+      '/.obsidian/workspace*' \
+      '*.tmp' \
+      '*.swp' \
+      '.DS_Store' \
+      "$_SYNC_IGNORE_END"
+    if [ -s "$custom_tmp" ]; then
+      cat "$custom_tmp"
+    fi
+  } > "$tmp"; then
+    rm -f "$custom_tmp" "$tmp"
+    echo "sync: cannot compose $file" >&2
+    return 1
+  fi
+  rm -f "$custom_tmp"
+
+  # mktemp defaults to mode 0600. Existing ignore files may intentionally be
+  # group/world readable, so carry their exact permission bits across the
+  # atomic replacement.
+  if [ -f "$file" ]; then
+    mode="$(stat -c '%a' "$file" 2>/dev/null || true)"
+    if [ -n "$mode" ] && ! chmod "$mode" "$tmp"; then
+      rm -f "$tmp"
+      echo "sync: cannot preserve .stignore permissions" >&2
+      return 1
+    fi
+  fi
+  if ! mv -f "$tmp" "$file"; then
+    rm -f "$tmp"
+    echo "sync: cannot install $file" >&2
+    return 1
+  fi
+}
+
 # Syncthing's REST API is optional: when an api key and url are configured it
 # can answer "is this folder actually registered" without leaving the shell.
 # Never required, always bounded by --max-time.
@@ -104,15 +215,9 @@ _sync_setup() {
     fi
   fi
 
-  # Syncthing's own ignore file keeps device-local state (.local/) and editor
-  # noise out of the folder it shares.
-  cat > "$DAVE_HOME/.stignore" <<'STIGNORE'
-.local/
-.obsidian/workspace*
-*.tmp
-*.swp
-.DS_Store
-STIGNORE
+  # Prepare local protection before touching config or asking Syncthing to
+  # register/share this vault. A malformed managed block must stop setup.
+  _sync_prepare_ignores || die "sync setup: could not prepare .stignore"
 
   device_id >/dev/null
   # An empty .obsidian/app.json is enough for Obsidian to treat the folder as

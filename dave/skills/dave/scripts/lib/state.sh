@@ -17,6 +17,9 @@ cmd_init() {
   fi
   mkdir -p "$DAVE_HOME" "$MISSIONS" "$INTAKE" "$PROJECTS" \
           "$LOCAL" "$VIEWS" "$JOURNAL_DIR" "$RENDER/log"
+  # Receiving devices get local protection during initialization, before a
+  # later setup command can register the vault with Syncthing.
+  _sync_prepare_ignores || die "init: could not prepare .stignore"
   [ -f "$CONFIG" ]       || cp "$TEMPLATES/config-template.json" "$CONFIG"
   [ -f "$PRIORITIES" ]   || cp "$TEMPLATES/priorities-template.md" "$PRIORITIES"
   [ -f "$LOCAL_CONFIG" ] || printf '{}\n' > "$LOCAL_CONFIG"
