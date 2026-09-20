@@ -18,6 +18,8 @@ DAVE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$DAVE_SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/journal-core.sh
 . "$DAVE_SCRIPT_DIR/lib/journal-core.sh"
+# shellcheck source=lib/integrity.sh
+. "$DAVE_SCRIPT_DIR/lib/integrity.sh"
 # shellcheck source=lib/views.sh
 . "$DAVE_SCRIPT_DIR/lib/views.sh"
 # shellcheck source=lib/render.sh

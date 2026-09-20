@@ -17,16 +17,23 @@ sync_ready() {
 }
 
 cmd_sync() {
-  require_init
   need_jq
   local sub="${1:-status}"
   shift || true
   case "$sub" in
+    status|conflicts|journal-conflicts)
+      [ -f "$CONFIG" ] || exit 3
+      # Diagnostics and recovery must survive a broken journal/reducer.
+      _views_ensure || true ;;
+    *) require_init ;;
+  esac
+  case "$sub" in
     setup)     _sync_setup "$@" ;;
     status)    _sync_status "$@" ;;
     conflicts) _sync_conflicts "$@" ;;
+    journal-conflicts) _journal_recover "$@" ;;
     rebuild)   views_rebuild; echo "rebuilt: $VIEWS" ;;
-    *) die "unknown sync subcommand: $sub (setup|status|conflicts|rebuild)" ;;
+    *) die "unknown sync subcommand: $sub (setup|status|conflicts|journal-conflicts|rebuild)" ;;
   esac
 }
 
@@ -496,12 +503,15 @@ _sync_status() {
     stid="$(_sync_st_myid "$(_sync_api_key)" "$(_sync_api_url)")"
   fi
 
+  local integrity='{}' identity='{}'
+  [ ! -f "$LOCAL/integrity.json" ] || integrity="$(cat "$LOCAL/integrity.json")"
+  [ ! -f "$VIEWS/identity-diagnostics.json" ] || identity="$(cat "$VIEWS/identity-diagnostics.json")"
   if [ "$as_json" -eq 1 ]; then
-    jq -n --argjson j "$journals" --argjson c "${conflicts:-0}" \
+    jq -n --argjson integrity "$integrity" --argjson identity "$identity" --argjson j "$journals" --argjson c "${conflicts:-0}" \
       --arg fresh "$fresh" --arg st "$syncthing" --arg stid "$stid" \
       --argjson enabled "$(sync_ready && echo true || echo false)" \
       --arg home "$DAVE_HOME" \
-      '{home:$home, enabled:$enabled, journals:$j,
+      '{home:$home, enabled:$enabled, journals:$j, integrity:$integrity, identity_diagnostics:$identity,
         views:$fresh, conflicts:$c, syncthing:$st,
         syncthing_id:(if $stid == "" then null else $stid end)}'
     return 0
@@ -511,6 +521,7 @@ _sync_status() {
   printf 'sync:   %s\n' "$(sync_ready && echo enabled || echo 'not enabled — run: sync setup')"
   printf 'views:  %s\n' "$fresh"
   printf '%s' "$journals" | jq -r '.[] | "journal: \(.dev)  \(.events) events, last \(.last_ts // "—")"'
+  printf '%s' "$integrity" | jq -r '"journal integrity: \(.diagnostics // [] | length) diagnostic(s)"'
   printf 'conflict copies: %s\n' "$conflicts"
   printf 'syncthing: %s\n' "$syncthing"
   [ -n "$stid" ] && printf 'syncthing device: %s\n' "$stid"
