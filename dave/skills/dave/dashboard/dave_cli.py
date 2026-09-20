@@ -200,12 +200,65 @@ class DaveCli:
         return self.run_json("drift", "events", "--days", str(days), "--json")
 
     def sync_status(self) -> str:
-        """Ahead/behind/dirty versus the remote.
+        """Human-readable sync status.
 
         Returns:
             The `sync status` text.
         """
         return self.run("sync", "status")
+
+    def sync_status_json(self) -> Any:
+        """Sync status as JSON: journals, view freshness, conflicts.
+
+        Returns:
+            The `sync status --json` payload.
+        """
+        return self.run_json("sync", "status", "--json")
+
+    def sync_rebuild(self) -> str:
+        """Rebuild the derived views from the journal.
+
+        Returns:
+            The dave.sh output line.
+        """
+        return self.run("sync", "rebuild")
+
+    def sync_conflict_preview(self, conflict_file: str) -> Any:
+        """Read-only preview of one sync-conflict copy.
+
+        Args:
+            conflict_file: Path of the *.sync-conflict-* file.
+
+        Returns:
+            The `sync conflicts preview --json` payload, including the digests
+            a later resolve must present back.
+        """
+        return self.run_json("sync", "conflicts", "preview", conflict_file, "--json")
+
+    def sync_resolve(
+        self,
+        conflict_file: str,
+        action: str,
+        expect: str | None = None,
+        expect_original: str | None = None,
+    ) -> str:
+        """Resolve one sync-conflict copy.
+
+        Args:
+            conflict_file: Path of the *.sync-conflict-* file.
+            action: keep-original, use-conflict-copy, or merge.
+            expect: Digest the conflict copy carried in the preview.
+            expect_original: Digest the original carried in the preview.
+
+        Returns:
+            The dave.sh output line.
+        """
+        args = ["sync", "conflicts", "resolve", conflict_file, action]
+        if expect:
+            args += ["--expect", expect]
+        if expect_original:
+            args += ["--expect-original", expect_original]
+        return self.run(*args)
 
     # ----------------------------------------------------------------- writes
 
@@ -542,13 +595,10 @@ class DaveCli:
         """
         return self.run("intake", source, stdin=text)
 
-    def sync(self, action: str) -> str:
-        """Pull or push the state tree.
-
-        Args:
-            action: pull or push. Push reaches here only via a user click.
+    def sync_conflicts_json(self) -> Any:
+        """Sync-conflict copies and the originals they shadow.
 
         Returns:
-            The dave.sh output line.
+            The `sync conflicts --json` payload.
         """
-        return self.run("sync", action)
+        return self.run_json("sync", "conflicts", "--json")

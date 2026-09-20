@@ -43,21 +43,32 @@ class ChangeWatcher:
 
     One thread polls every second; SSE subscribers read `generation`, which
     increments on each observed change. One level of subdirectories is
-    scanned (log/, missions/, intake/, projects/<slug>/); .git is ignored.
+    scanned (journal/, missions/, intake/, projects/<slug>/, .local/); .git
+    is ignored. When journal mtimes move — Syncthing delivering another
+    device's events — `on_journal_change` is invoked so derived views get
+    rebuilt instead of going silently stale.
     """
 
-    def __init__(self, home: Path, interval: float = 1.0) -> None:
+    def __init__(
+        self,
+        home: Path,
+        interval: float = 1.0,
+        on_journal_change: Any = None,
+    ) -> None:
         """Bind the watcher to a directory.
 
         Args:
             home: The state directory to watch.
             interval: Poll interval in seconds.
+            on_journal_change: Optional callable run when journal/ mtimes move.
         """
         self.home = home
         self.interval = interval
+        self.on_journal_change = on_journal_change
         self.generation = 0
         self.changed_at = datetime.now().astimezone().isoformat()
         self._latest = self._scan()
+        self._latest_journal = self._scan_journal()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True)
 
@@ -102,6 +113,22 @@ class ChangeWatcher:
                 continue
         return latest
 
+    def _scan_journal(self) -> float:
+        """Newest mtime among the journal files Syncthing can deliver.
+
+        Returns:
+            The maximum mtime seen under journal/, 0.0 when absent.
+        """
+        latest = 0.0
+        journal = self.home / "journal"
+        try:
+            for child in journal.iterdir():
+                if child.is_file():
+                    latest = max(latest, child.stat().st_mtime)
+        except OSError:
+            pass
+        return latest
+
     def _loop(self) -> None:
         """Poll for mtime changes until stopped.
 
@@ -109,6 +136,14 @@ class ChangeWatcher:
             None.
         """
         while not self._stop.wait(self.interval):
+            journal_newest = self._scan_journal()
+            if journal_newest != self._latest_journal:
+                self._latest_journal = journal_newest
+                if self.on_journal_change is not None:
+                    try:
+                        self.on_journal_change()
+                    except Exception:  # noqa: BLE001 — never kill the poller
+                        pass
             newest = self._scan()
             if newest != self._latest:
                 self._latest = newest
@@ -410,7 +445,15 @@ def main() -> None:
     cli = DaveCli(args.dave_sh, dave_home)
     api = DashboardApi(dave_home, cli)
     token = secrets.token_urlsafe(32)
-    watcher = ChangeWatcher(dave_home)
+
+    def _refresh_views() -> None:
+        """Rebuild derived views when a remote journal lands via Syncthing."""
+        try:
+            cli.run("state")
+        except DaveError:
+            pass
+
+    watcher = ChangeWatcher(dave_home, on_journal_change=_refresh_views)
     watcher.start()
 
     server = DashboardServer(("127.0.0.1", args.port), api, token, watcher)

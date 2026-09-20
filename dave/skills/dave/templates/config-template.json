@@ -68,12 +68,7 @@
     "session_start": true
   },
 
-  "_comment_sync": "Cross-device persistence: ~/.dave is a git repo; config.json is gitignored so these settings stay per-device. `dave.sh sync setup <remote-url>` fills remote/branch and flips enabled. Pull runs at the top of `brief`; push is user-run only; agents never invoke it.",
-  "sync": {
-    "enabled": false,
-    "remote": "",
-    "branch": "main"
-  },
+  "_comment_sync": "Cross-device persistence: Syncthing moves ~/.dave between machines; this file is shared, so sync settings live in .local/config.json per device — there is deliberately no \"sync\" key here. `dave.sh sync setup` writes .stignore and flips .sync.enabled there; syncthing_url/syncthing_api_key (or the SYNCTHING_API_KEY env var) are optional, only used to ask the local Syncthing daemon whether the folder is registered. dave.sh never pushes or pulls.",
 
   "_comment_roster": "Which specialist agents D.A.V.E. may delegate to. Remove any you don't want him reaching for.",
   "_comment_models": "Which model each agent runs on. Overrides the agent's own default; an explicit model on a single call overrides this. haiku for mechanical transformation, sonnet for structured analysis, opus where depth decides correctness. Set \"inherit\" to use the main session's model.",

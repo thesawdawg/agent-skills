@@ -132,49 +132,78 @@ async function act(path, payload, confirmSpec) {
   }
 }
 
-/* Sync actions, shared by the Overview card and the Sync & Config view. */
-async function syncRemoteInfo() {
-  try {
-    const cfg = await apiGet("/api/config");
-    const s = (cfg && cfg.sync) || {};
-    return { remote: s.remote || "(none configured)", branch: s.branch || "main",
-             enabled: !!s.enabled };
-  } catch (e) {
-    return { remote: "(unreadable)", branch: "main", enabled: false };
-  }
+/* Sync actions, shared by the Overview card and the Sync & Config view.
+   Transport is Syncthing: dave.sh only ever inspects the folder and rebuilds
+   views — there is no pull and no push. */
+
+function renderSyncOut(out, status) {
+  const journals = (status.journals || []).map((j) =>
+    `  ${j.dev} — ${j.events} events, last ${j.last_ts || "—"}`).join("\n");
+  const conflicts = status.conflict_list || [];
+  const conflictLines = conflicts.map((c) => `  ${c.conflict}`).join("\n");
+  out.textContent =
+    `home: ${status.home}\nviews: ${status.views} · sync ${status.enabled ? "enabled" : "not enabled"}\n` +
+    `syncthing: ${status.syncthing}\n` +
+    (journals ? `journals:\n${journals}\n` : "journals: (none)\n") +
+    `conflict copies: ${status.conflicts}` +
+    (conflictLines ? `\n${conflictLines}` : "");
+}
+
+async function fetchSyncInto(out) {
+  if (!out) return;
+  out.textContent = "fetching…";
+  try { renderSyncOut(out, await apiGet("/api/sync")); }
+  catch (e) { out.textContent = e.message; }
 }
 
 function wireSyncButtons(root, rerender) {
-  const pull = root.querySelector('[data-sync="pull"]');
-  const push = root.querySelector('[data-sync="push"]');
   const statusBtn = root.querySelector('[data-sync="status"]');
+  const rebuildBtn = root.querySelector('[data-sync="rebuild"]');
   const out = root.querySelector("#sync-out");
-  if (pull) pull.onclick = async () => {
-    const ok = await act("/api/sync", { action: "pull" }, {
-      title: "Sync pull",
-      body: "Runs `dave.sh sync pull` — rebases local state onto the remote (autostash). A conflict aborts back to a clean tree and reports.",
-      confirmLabel: "Pull",
+  if (statusBtn) statusBtn.onclick = () => fetchSyncInto(out);
+  if (rebuildBtn) rebuildBtn.onclick = async () => {
+    const ok = await act("/api/sync/rebuild", {}, {
+      title: "Rebuild views",
+      body: "Runs `dave.sh sync rebuild` — refolds every journal in journal/ into the derived views under .local/views and re-renders the log and parking lot.",
+      confirmLabel: "Rebuild",
     });
     if (ok) rerender();
   };
-  if (push) push.onclick = async () => {
-    const info = await syncRemoteInfo();
-    const ok = await act("/api/sync", { action: "push" }, {
-      title: "Sync push",
-      body: "Runs `dave.sh sync push` — publishes the state tree to the remote. This is the same user-run boundary as the CLI.",
-      details: `git add -A\ncommit "sync: <host> <date>"  (if dirty)\npush → ${info.remote} (branch ${info.branch})`,
-      confirmLabel: "Push",
-      danger: true,
-    });
-    if (ok) rerender();
-  };
-  if (statusBtn) statusBtn.onclick = async () => {
-    if (out) {
-      out.textContent = "fetching…";
-      try { out.textContent = (await apiGet("/api/sync")).output; }
-      catch (e) { out.textContent = e.message; }
-    }
-  };
+  root.querySelectorAll("[data-conflict]").forEach((b) => {
+    b.onclick = async () => {
+      const file = b.dataset.conflict;
+      const action = b.dataset.action;
+      const verb = action === "keep-original" ? "Keep original" : "Use conflict copy";
+      // The decision is shown against the bytes as they are right now, and the
+      // digests travel with it so a file that changes in between is refused
+      // rather than resolved against what the user never saw.
+      let preview;
+      try {
+        preview = (await apiPost("/api/sync/preview", { file })).preview;
+      } catch (e) {
+        toast(e.message, true);
+        return;
+      }
+      const consequence = (preview.consequences || {})[action] || "";
+      const diff = preview.binary
+        ? "(binary content — not shown)"
+        : `${preview.diff || ""}${preview.truncated ? "\n(diff truncated)" : ""}`;
+      const ok = await act("/api/sync/resolve", {
+        file,
+        action,
+        expect: preview.conflict_digest,
+        expect_original: preview.original_present ? preview.original_digest : undefined,
+      }, {
+        title: `${verb}: ${file.split("/").pop()}`,
+        body: consequence,
+        // Escaped once and shown verbatim: a diff must not be read as markdown.
+        details: `original (left) against the conflict copy (right):\n${diff}`,
+        confirmLabel: verb,
+        danger: action === "use-conflict-copy",
+      });
+      if (ok) rerender();
+    };
+  });
 }
 
 function ageOf(iso) {
@@ -356,11 +385,10 @@ async function viewOverview(main) {
       <div class="section-title"><h2>Sync</h2>
         <span class="hdr-spacer"></span>
         <button class="btn small" data-sync="status">status</button>
-        <button class="btn small" data-sync="pull">pull</button>
-        <button class="btn small danger" data-sync="push">push</button>
+        <button class="btn small" data-sync="rebuild">rebuild views</button>
       </div>
-      <p class="help">~/.dave as a git repo on a private remote. Pull runs at session start; push is user-run only.</p>
-      <pre id="sync-out" class="code muted">(fetch status to see ahead/behind/dirty)</pre>
+      <p class="help">Syncthing moves the folder between devices; dave.sh never pushes. Whatever arrived is folded into the views on every read.</p>
+      <pre id="sync-out" class="code muted">(fetch status to see journals, view freshness, conflicts)</pre>
     </div>` : "";
 
   const focusCard = `
@@ -1044,24 +1072,55 @@ async function viewReview(main) {
 async function viewSync(main) {
   const health = await apiGet("/api/health");
   const cfg = await apiGet("/api/config");
+  let sync = {};
+  try { sync = await apiGet("/api/sync"); } catch (e) { /* reported below */ }
   const syncCfg = (cfg && cfg.sync) || {};
   const enabled = !!syncCfg.enabled;
-  const noSyncTip = "Sync not configured — run `dave.sh sync setup <remote-url>` first";
+  const journals = sync.journals || [];
+  const conflicts = sync.conflict_list || [];
+  const localKeys = cfg._local_keys || [];
+
+  const journalRows = journals.map((j) => `
+    <tr><td class="mono">${esc(j.dev)}</td><td class="mono">${j.events}</td>
+    <td class="mono muted">${esc(j.last_ts || "—")}</td></tr>`).join("");
+
+  const conflictRows = conflicts.map((c) => `
+    <tr>
+      <td class="mono">${esc(c.conflict)}</td>
+      <td class="mono muted">shadows ${esc(c.original)}</td>
+      <td class="nowrap">
+        <button class="btn small" data-conflict="${esc(c.conflict)}" data-action="keep-original"
+          aria-label="Keep the original and delete the conflict copy of ${esc(c.original)}">keep original</button>
+        <button class="btn small danger" data-conflict="${esc(c.conflict)}" data-action="use-conflict-copy"
+          aria-label="Replace ${esc(c.original)} with the conflict copy">use conflict copy</button>
+      </td>
+    </tr>`).join("");
+
   main.innerHTML = `
     <h1>Sync &amp; Config</h1>
     <div class="card">
       <div class="section-title"><h2>Sync</h2>
         <span class="badge ${enabled ? "green" : ""}">${enabled ? "enabled" : "not configured"}</span>
+        <span class="badge ${sync.views === "fresh" ? "green" : "amber"}">views ${esc(sync.views || "—")}</span>
         <span class="hdr-spacer"></span>
         <button class="btn small" data-sync="status">status</button>
-        <button class="btn small" data-sync="pull"${enabled ? "" : ` disabled title="${esc(noSyncTip)}"`}>pull</button>
-        <button class="btn small danger" data-sync="push"${enabled ? "" : ` disabled title="${esc(noSyncTip)}"`}>push</button>
+        <button class="btn small" data-sync="rebuild">rebuild views</button>
       </div>
-      <p class="help">~/.dave as a git repo on a private remote: ${esc(syncCfg.remote || "(none configured)")}${syncCfg.branch ? ` (branch ${esc(syncCfg.branch)})` : ""}. Pull runs at session start; push is user-run only — the button is the boundary.</p>
-      <pre id="sync-out" class="code muted">(fetch status to see ahead/behind/dirty)</pre>
+      <p class="help">Syncthing moves the folder; dave.sh never pushes. Run <span class="mono">dave.sh sync setup</span> on each device — it finds the local Syncthing daemon and can register <span class="mono">${esc(health.dave_home)}</span> as the <span class="mono">dave-vault</span> folder for you, or prints the manual checklist.</p>
+      <p class="mono muted">syncthing: ${esc(sync.syncthing || "not checked")}</p>
+      ${sync.syncthing_id ? `<p class="mono muted">syncthing device id: ${esc(sync.syncthing_id)}</p>` : ""}
+      ${journals.length
+        ? `<table><tr><th>device</th><th>events</th><th>last event</th></tr>${journalRows}</table>`
+        : '<p class="muted">(no journals yet — this device writes its first event on the next command)</p>'}
+      <h2 style="margin-top:12px">Conflicts</h2>
+      <p class="help">When two devices edit the same file offline, Syncthing keeps both and names the loser *.sync-conflict-*. Each choice shows the diff first: <span class="mono">keep original</span> deletes the copy; <span class="mono">use conflict copy</span> replaces the original with it. Either way the discarded bytes are kept under <span class="mono">.local/conflict-recovery</span>. Journal conflicts are not resolved here — they are recovered with <span class="mono">dave.sh sync journal-conflicts</span>, which preserves both sides.</p>
+      ${conflicts.length
+        ? `<table>${conflictRows}</table>`
+        : '<p class="muted">(no sync conflicts)</p>'}
+      <pre id="sync-out" class="code muted">(fetch status for the raw readout)</pre>
     </div>
-    <div class="card"><h2>Config (redacted)</h2>
-      <p class="help">config.json verbatim, with anything named like a secret redacted before it leaves the server.</p>
+    <div class="card"><h2>Config (merged, redacted)</h2>
+      <p class="help">config.json merged with this device's .local/config.json — local keys win.${localKeys.length ? ` Device-local keys: ${localKeys.map(esc).join(", ")}.` : ""}</p>
       <pre class="code">${esc(JSON.stringify(cfg, null, 2))}</pre></div>
     <div class="card"><h2>Health</h2>
       <p class="help">What the dashboard is reading — the state root it serves and whether init has run.</p>
@@ -1089,6 +1148,7 @@ document.getElementById("hdr-about-btn").addEventListener("click", () => {
     <p>A loopback-only view of <span class="mono">~/.dave</span> — the server binds 127.0.0.1 and nothing leaves the machine.</p>
     <p>Reads come straight from the state files; <strong>every write runs <span class="mono">dave.sh</span></strong>, the same commands you'd type, so the state layer stays the only writer.</p>
     <p>Views refresh themselves when the state tree changes (server-sent events); the dot in the header is the connection.</p>
+    <p>Across devices, <strong>Syncthing</strong> moves the folder — dave.sh never pushes, and there is no git remote. Conflict copies land as <span class="mono">*.sync-conflict-*</span> and are resolved from the Sync view.</p>
     <h3>Verdict colors</h3>
     <table class="legend">
       <tr><td><span class="badge green">trust</span></td><td>correct, complete, verified — folded in</td></tr>

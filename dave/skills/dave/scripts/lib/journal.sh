@@ -5,60 +5,68 @@
 
 cmd_park() {
   require_init
+  need_jq
   [ $# -ge 1 ] || die "usage: park <text>"
-  printf -- '- [ ] %s _(parked %s' "$*" "$(date '+%F %H:%M')" >> "$PARKING"
   local ref
   ref="$(jq -r '.focus.ref // empty' "$STATE" 2>/dev/null || true)"
-  if [ -n "$ref" ]; then printf ', while on %s' "$ref" >> "$PARKING"; fi
-  printf ')_\n' >> "$PARKING"
+  # data.ts is local wall-clock: the rendered line's "(parked <stamp>)" and the
+  # day it files under are both local concepts. The id is minted inside
+  # event_append, where ts/dev/seq are all known.
+  event_append "park.add" "$(jq -nc \
+    --arg text "$*" --arg ref "$ref" --arg ts "$(now_iso)" \
+    '{text:$text, ref:$ref, ts:$ts}')"
   echo "parked: $*"
+}
+
+# One parked item rendered the way the markdown always showed it; shared by
+# `parked` and `parked done` so both number and print identically.
+_parked_line() {
+  jq -r 'select(.done == null)
+    | "- [ ] \(.text) _(parked \(.parked_at)"
+    + (if (.ref // "") != "" then ", while on \(.ref)" else "" end) + ")_"'
 }
 
 cmd_parked() {
   require_init
+  need_jq
   case "${1:-}" in
-    "") grep '^- \[ \]' "$PARKING" 2>/dev/null || echo "(nothing parked)" ;;
+    "")
+      local lines
+      lines="$(jq -c '.[] | select(.done == null)' "$VIEWS/parked.json" 2>/dev/null \
+        | _parked_line || true)"
+      [ -n "$lines" ] && printf '%s\n' "$lines" || echo "(nothing parked)"
+      ;;
     done) _parked_done "${2:-}" ;;
     *) die "usage: parked [done <n>]" ;;
   esac
 }
 
-# Retires the n-th open item (1-based, counting only `- [ ]` lines in file
-# order — the same numbering `parked` shows and the dashboard passes back).
+# Retires the n-th open item (1-based, counting open items in view order —
+# the same numbering `parked` shows and the dashboard passes back).
 _parked_done() {
   local n="$1"
   case "$n" in ''|*[!0-9]*) die "usage: parked done <n>" ;; esac
-  local total
-  total="$(grep -c '^- \[ \]' "$PARKING" 2>/dev/null || true)"
-  [ "$n" -ge 1 ] && [ "$n" -le "${total:-0}" ] || die "no such parked item: $n"
-  local text tmp
-  text="$(awk -v n="$n" '/^- \[ \]/{c++; if (c == n) { sub(/^- \[ \] /, ""); print; exit }}' "$PARKING")"
-  tmp="$(mktemp "$PARKING.XXXXXX")"
-  awk -v n="$n" -v d="$(today)" '
-    /^- \[ \]/ {
-      c++
-      if (c == n) {
-        sub(/^- \[ \]/, "- [x]")
-        $0 = $0 " _(retired " d ")_"
-      }
-    }
-    { print }
-  ' "$PARKING" > "$tmp" && mv "$tmp" "$PARKING"
+  local open
+  open="$(jq -c '[.[] | select(.done == null)]' "$VIEWS/parked.json" 2>/dev/null || echo '[]')"
+  local total; total="$(printf '%s' "$open" | jq 'length')"
+  [ "$n" -ge 1 ] && [ "$n" -le "$total" ] || die "no such parked item: $n"
+  local id text
+  id="$(printf '%s' "$open" | jq -r ".[$((n - 1))].id")"
+  text="$(printf '%s' "$open" | jq ".[$((n - 1))]" | _parked_line | sed 's/^- \[ \] //')"
+  event_append "park.done" "$(jq -nc \
+    --arg id "$id" --arg ts "$(now_iso)" '{id:$id, ts:$ts}')"
   echo "retired: $text"
 }
 
 cmd_log() {
   require_init
+  need_jq
   [ $# -ge 1 ] || die "usage: log <text>"
-  local f; f="$LOGDIR/$(today).md"
-  [ -f "$f" ] || printf '# %s\n\n' "$(date '+%A, %B %-d, %Y')" > "$f"
   local ref
   ref="$(jq -r '.focus.ref // empty' "$STATE" 2>/dev/null || true)"
-  if [ -n "$ref" ]; then
-    printf -- '- `%s` **%s** — %s\n' "$(date '+%H:%M')" "$ref" "$*" >> "$f"
-  else
-    printf -- '- `%s` %s\n' "$(date '+%H:%M')" "$*" >> "$f"
-  fi
+  event_append "log.add" "$(jq -nc \
+    --arg ts "$(now_iso)" --arg ref "$ref" --arg text "$*" \
+    '{ts:$ts, ref:$ref, text:$text}')"
   echo "logged"
 }
 
@@ -92,7 +100,8 @@ cmd_intake() {
   local source_name="${1:-board}"
   local path; path="$INTAKE/$(today)-$(slugify "$source_name").md"
   cat > "$path"
-  json_edit "$STATE" --arg ts "$(now_iso)" --arg src "$source_name" \
-    '.last_intake = ($ts + " (" + $src + ")")'
+  event_append "intake.archive" "$(jq -nc \
+    --arg ts "$(now_iso)" --arg src "$source_name" \
+    '{ts:$ts, source:$src}')"
   echo "$path"
 }

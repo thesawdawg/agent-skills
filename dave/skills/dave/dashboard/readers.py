@@ -3,11 +3,20 @@
 Reads are cheap and must never mutate, so the dashboard parses the markdown
 and JSON files itself instead of shelling out. Anything that writes still goes
 through DaveCli — dave.sh is the only writer.
+
+Structured state (state.json, notes.json, commitments.json, missions.json,
+sessions.jsonl, assignments.jsonl) lives under ``.local/views/`` — derived
+files rebuilt from the event journal in ``journal/``. Prose and config stay
+at the tree root.
 """
 
 from __future__ import annotations
 
+import fcntl
 import json
+import threading
+from contextlib import contextmanager
+from collections.abc import Iterator
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -24,6 +33,9 @@ _LOG_ENTRY_RE = re.compile(r"^- `(\d{2}:\d{2})` (?:\*\*([^*]+)\*\* — )?(.*)$")
 
 PRIORITY_SECTIONS = ("now", "next", "blocked", "someday")
 
+# Derived views: the journal reducer writes these under .local/views/.
+_VIEWS = ".local/views"
+
 
 class StateReader:
     """Parses the state tree's files into dashboard-ready structures."""
@@ -35,6 +47,57 @@ class StateReader:
             dave_home: Absolute path to the state tree.
         """
         self.home = Path(dave_home)
+        self._snapshot = threading.local()
+
+    @contextmanager
+    def snapshot(self) -> Iterator[None]:
+        """Pin a generation lazily for one request, releasing its lease on exit.
+
+        Returns:
+            A context in which all derived reads use the same generation.
+        """
+        self._snapshot.active = True
+        self._snapshot.generation = None
+        self._snapshot.lease = None
+        try:
+            yield
+        finally:
+            lease = self._snapshot.lease
+            if lease is not None:
+                lease.close()
+            self._snapshot.active = False
+            self._snapshot.generation = None
+            self._snapshot.lease = None
+
+    def _derived_path(self, name: str) -> Path:
+        """Resolve derived paths under a leased generation for this request.
+
+        Args:
+            name: A vault-relative filename.
+
+        Returns:
+            The pinned filename, or its legacy location before cache migration.
+        """
+        if not name.startswith((".local/views/", ".local/render/")):
+            return self.home / name
+        if not getattr(self._snapshot, "active", False):
+            return self.home / name
+        generation = self._snapshot.generation
+        if generation is None:
+            local = self.home / ".local"
+            try:
+                with (local / "publication.lock").open("rb") as publication:
+                    fcntl.flock(publication, fcntl.LOCK_SH)
+                    generation = (local / "current").resolve(strict=True)
+                    if generation.parent != (local / "generations").resolve():
+                        raise OSError("invalid generation location")
+                    lease = (generation / ".lease").open("rb")
+                    fcntl.flock(lease, fcntl.LOCK_SH)
+                    self._snapshot.generation = generation
+                    self._snapshot.lease = lease
+            except FileNotFoundError:
+                return self.home / name
+        return generation / name.removeprefix(".local/")
 
     def _read_text(self, name: str) -> str:
         """Read a file under DAVE_HOME, or empty string when absent.
@@ -46,7 +109,7 @@ class StateReader:
             The file's text, or "" when missing.
         """
         try:
-            return (self.home / name).read_text(encoding="utf-8", errors="replace")
+            return self._derived_path(name).read_text(encoding="utf-8", errors="replace")
         except OSError:
             return ""
 
@@ -90,16 +153,43 @@ class StateReader:
     # ---------------------------------------------------------------- files
 
     def config(self, redact: bool = True) -> dict[str, Any]:
-        """config.json, optionally with credential-shaped values masked.
+        """The merged config: config.json with .local/config.json over it.
+
+        Mirrors dave.sh's `_config_merged` — local keys win, so the dashboard
+        shows what the commands actually use.
 
         Args:
             redact: Replace values under keys named key/token/secret/password.
 
         Returns:
-            The config object.
+            The merged config object.
         """
-        cfg = self._read_json("config.json", {})
+        shared = self._read_json("config.json", {})
+        local = self._read_json(".local/config.json", {})
+        cfg = _deep_merge(
+            shared if isinstance(shared, dict) else {},
+            local if isinstance(local, dict) else {})
         return _redact(cfg) if redact and isinstance(cfg, dict) else cfg
+
+    def local_config_keys(self) -> list[str]:
+        """Top-level keys supplied by .local/config.json.
+
+        Returns:
+            Key names, sorted; [] when there is no local config.
+        """
+        local = self._read_json(".local/config.json", {})
+        return sorted(local.keys()) if isinstance(local, dict) else []
+
+    def local_project_paths(self) -> dict[str, str]:
+        """The device-local slug → checkout map.
+
+        Returns:
+            The projects.paths object from .local/config.json, or {}.
+        """
+        local = self._read_json(".local/config.json", {})
+        paths = (local.get("projects") or {}).get("paths") \
+            if isinstance(local, dict) else None
+        return paths if isinstance(paths, dict) else {}
 
     def state(self) -> dict[str, Any]:
         """state.json.
@@ -107,7 +197,7 @@ class StateReader:
         Returns:
             The state object.
         """
-        return self._read_json("state.json", {})
+        return self._read_json(f"{_VIEWS}/state.json", {})
 
     def priorities(self) -> dict[str, Any]:
         """priorities.md parsed into its four ranked sections.
@@ -168,7 +258,7 @@ class StateReader:
         """
         open_items: list[dict[str, Any]] = []
         retired: list[dict[str, Any]] = []
-        for line in self._read_text("parking-lot.md").splitlines():
+        for line in self._read_text(".local/render/parking-lot.md").splitlines():
             for mark, bucket in (("- [ ]", open_items), ("- [x]", retired)):
                 if line.startswith(mark):
                     raw_text = line[len(mark):].strip()
@@ -200,7 +290,7 @@ class StateReader:
         out: list[dict[str, Any]] = []
         for i in range(days):
             day = (date.today() - timedelta(days=i)).isoformat()
-            text = self._read_text(f"log/{day}.md")
+            text = self._read_text(f".local/render/log/{day}.md")
             if not text:
                 continue
             entries = []
@@ -218,7 +308,7 @@ class StateReader:
         Returns:
             The notes object.
         """
-        return self._read_json("notes.json", {})
+        return self._read_json(f"{_VIEWS}/notes.json", {})
 
     def commitments(self) -> list[dict[str, Any]]:
         """commitments.json.
@@ -226,7 +316,7 @@ class StateReader:
         Returns:
             The commitments array, or [] when absent/malformed.
         """
-        data = self._read_json("commitments.json", [])
+        data = self._read_json(f"{_VIEWS}/commitments.json", [])
         return data if isinstance(data, list) else []
 
     def sessions(self) -> list[dict[str, Any]]:
@@ -235,29 +325,24 @@ class StateReader:
         Returns:
             The segment records.
         """
-        return self._read_jsonl("sessions.jsonl")
+        return self._read_jsonl(f"{_VIEWS}/sessions.jsonl")
 
     def assignment_rows(self) -> list[dict[str, Any]]:
         """assignments.jsonl folded into one row per charge.
 
-        Mirrors lib/mission.sh `_mission_rows`: assign events are the rows;
-        the last record event with the same id supplies the verdict.
+        Mirrors lib/mission.sh `_mission_rows`: assign events are the rows, and
+        the reducer has already folded each grade onto the assignment it named
+        by entity identity, so the verdict is read from the row itself.
 
         Returns:
-            Rows with id, mission, agent, model, charge, ref, project,
-            assigned, verdict, summary, returned.
+            Rows with id, entity_id, mission, agent, model, charge, ref,
+            project, assigned, verdict, summary, returned.
         """
-        events = self._read_jsonl("assignments.jsonl")
-        assigns = [e for e in events if e.get("type") == "assign"]
-        records = [e for e in events if e.get("type") == "record"]
-        rows = []
-        for a in assigns:
-            rec = next(
-                (r for r in reversed(records) if r.get("id") == a.get("id")),
-                None,
-            )
-            rows.append({
+        events = self._read_jsonl(f"{_VIEWS}/assignments.jsonl")
+        return [
+            {
                 "id": a.get("id"),
+                "entity_id": a.get("entity_id", ""),
                 "mission": a.get("mission", ""),
                 "agent": a.get("agent", ""),
                 "model": a.get("model", ""),
@@ -265,11 +350,13 @@ class StateReader:
                 "ref": a.get("ref", ""),
                 "project": a.get("project", ""),
                 "assigned": a.get("ts"),
-                "verdict": rec.get("verdict") if rec else None,
-                "summary": rec.get("summary", "") if rec else "",
-                "returned": rec.get("ts") if rec else None,
-            })
-        return rows
+                "verdict": a.get("verdict"),
+                "summary": a.get("summary", ""),
+                "returned": a.get("returned"),
+            }
+            for a in events
+            if a.get("type") == "assign"
+        ]
 
     def missions(self) -> dict[str, Any]:
         """missions.json.
@@ -277,15 +364,24 @@ class StateReader:
         Returns:
             The mission metadata object keyed by slug.
         """
-        data = self._read_json("missions.json", {})
+        data = self._read_json(f"{_VIEWS}/missions.json", {})
         return data if isinstance(data, dict) else {}
 
     def projects(self) -> list[dict[str, Any]]:
-        """Every registered project's project.json.
+        """Every registered project, shared document merged with derived
+        state and this device's checkout path.
+
+        project.json is the identity; refs/last_touched come from
+        .local/views/projects.json and `path` from .local/config.json's
+        projects.paths (None where this device has no checkout).
 
         Returns:
             The project objects, sorted by slug.
         """
+        view = self._read_json(f"{_VIEWS}/projects.json", {})
+        if not isinstance(view, dict):
+            view = {}
+        paths = self.local_project_paths()
         base = self.home / "projects"
         out: list[dict[str, Any]] = []
         if base.is_dir():
@@ -296,6 +392,13 @@ class StateReader:
                 except (json.JSONDecodeError, OSError):
                     continue
                 if isinstance(obj, dict):
+                    slug = obj.get("slug", "")
+                    derived = view.get(slug) or {}
+                    obj.setdefault("refs", [])
+                    obj.setdefault("last_touched", None)
+                    obj.update({k: v for k, v in derived.items()
+                                if k in ("refs", "last_touched")})
+                    obj["path"] = paths.get(slug)
                     out.append(obj)
         return out
 
@@ -305,7 +408,7 @@ class StateReader:
         Returns:
             The cache object ({generated, entries}), or {} when absent.
         """
-        data = self._read_json("scan-cache.json", {})
+        data = self._read_json(".local/scan-cache.json", {})
         return data if isinstance(data, dict) else {}
 
     def intake_files(self) -> list[str]:
@@ -351,6 +454,27 @@ def _group(pattern: re.Pattern[str], text: str) -> str | None:
     """
     m = pattern.search(text)
     return m.group(1).strip() if m else None
+
+
+def _deep_merge(shared: dict[str, Any], local: dict[str, Any]) -> dict[str, Any]:
+    """Deep-merge two dicts, local winning — mirrors `_config_merged` in
+    common.sh. Explicit local values (including False/None) always win;
+    absent keys fall through to shared.
+
+    Args:
+        shared: The vault's config.json.
+        local: The device's .local/config.json.
+
+    Returns:
+        The merged dict (inputs are not mutated).
+    """
+    out = dict(shared)
+    for key, value in local.items():
+        if key in out and isinstance(out[key], dict) and isinstance(value, dict):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
 
 
 def _redact(value: Any) -> Any:

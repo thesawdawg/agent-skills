@@ -28,7 +28,9 @@ an optional port; substitute it for `8766` below when given.
 
 3. Report the URL in one line. The dashboard binds 127.0.0.1 only — it is a
    local view, not a service to share. Every write it offers goes back through
-   `dave.sh`; `sync push` from the UI only fires on a real button click.
+   `dave.sh`; conflict resolution from the Sync view only fires on a real
+   button click (and Syncthing, not this UI, is what moves files between
+   devices).
 
 4. Stop it later with the recorded pid:
    `kill "$(cat /tmp/dave-dashboard.pid)"`.

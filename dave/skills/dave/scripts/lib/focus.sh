@@ -71,7 +71,7 @@ _focus_close_segment() {
   [ "$s" -gt 0 ] || return 0
   mins=$(( (e - s) / 60 ))
   lines="$(_count_log_lines "$start" "$end")"
-  jsonl_append "$SESSIONS" "$(jq -nc \
+  event_append "session.close" "$(jq -nc \
     --arg ref "$ref" --arg label "$label" --arg project "$project" \
     --arg start "$start" --arg end "$end" \
     --argjson minutes "$mins" --argjson log_lines "$lines" \
@@ -82,12 +82,15 @@ _focus_close_segment() {
   return 0
 }
 
+# _focus_open <focus.set|focus.push> <ref> <label> — the reducer decides what
+# focus.push does to the stack; the writer only says what arrived.
 _focus_open() {
-  local ref="$1" label="${2:-$1}" project
+  local type="$1" ref="$2" label="${3:-$2}" project
   project="$(_focus_project_for "$ref")"
-  json_edit "$STATE" --arg ref "$ref" --arg label "$label" --arg project "$project" \
+  event_append "$type" "$(jq -nc \
+    --arg ref "$ref" --arg label "$label" --arg project "$project" \
     --arg ts "$(now_iso)" \
-    '.focus = {ref:$ref, label:$label, project:$project, started:$ts}'
+    '{ref:$ref, label:$label, project:$project, started:$ts}')"
 }
 
 _focus_line() {
@@ -105,17 +108,14 @@ cmd_focus() {
     set)
       [ $# -ge 2 ] || die "usage: focus set <ref> [label]"
       _focus_close_segment
-      _focus_open "$2" "${3:-$2}"
+      _focus_open focus.set "$2" "${3:-$2}"
       echo "focus: $2 — ${3:-$2}"
       ;;
     push)
       [ $# -ge 2 ] || die "usage: focus push <ref> [label]"
       local had; had="$(jq -r '.focus.ref // empty' "$STATE")"
       _focus_close_segment
-      if [ -n "$had" ]; then
-        json_edit "$STATE" '.focus_stack = ((.focus_stack // []) + [.focus])'
-      fi
-      _focus_open "$2" "${3:-$2}"
+      _focus_open focus.push "$2" "${3:-$2}"
       if [ -n "$had" ]; then
         echo "focus: $2 — ${3:-$2}  (stacked over $had)"
       else
@@ -126,20 +126,19 @@ cmd_focus() {
       _focus_close_segment
       local depth; depth="$(jq -r '(.focus_stack // []) | length' "$STATE")"
       if [ "$depth" -eq 0 ]; then
-        json_edit "$STATE" '.focus = null | .focus_stack = []'
+        event_append "focus.clear" '{}'
         echo "focus cleared (nothing stacked to return to)"
         return 0
       fi
       # Restarting the parent's clock is the point: its earlier time is already
       # banked as its own segment, and the detour must not be billed to it.
-      json_edit "$STATE" --arg ts "$(now_iso)" \
-        '.focus = ((.focus_stack | last) | .started = $ts)
-         | .focus_stack = (.focus_stack[:-1])'
+      event_append "focus.pop" \
+        "$(jq -nc --arg ts "$(now_iso)" '{started:$ts}')"
       echo "focus: $(jq -r '"\(.focus.ref) — \(.focus.label)"' "$STATE")  (returned)"
       ;;
     clear)
       _focus_close_segment
-      json_edit "$STATE" '.focus = null | .focus_stack = []'
+      event_append "focus.clear" '{}'
       echo "focus cleared"
       ;;
     show)
@@ -302,9 +301,10 @@ _drift_record() {
   [ -n "$ref" ]     || ref="$(jq -r '.focus.ref // ""' "$STATE")"
   [ -n "$project" ] || project="$(jq -r '.focus.project // ""' "$STATE")"
   # Bounded: this lives inside state.json, which is read on every brief.
-  json_edit "$STATE" --arg k "$kind" --arg o "$outcome" --arg r "$ref" \
+  event_append "drift.record" "$(jq -nc \
+    --arg k "$kind" --arg o "$outcome" --arg r "$ref" \
     --arg p "$project" --arg ts "$(now_iso)" \
-    '.drift_events = (((.drift_events // []) + [{kind:$k, outcome:$o, ref:$r, project:$p, at:$ts}]) | .[-500:])'
+    '{kind:$k, outcome:$o, ref:$r, project:$p, at:$ts}')"
   echo "drift: $kind → $outcome${ref:+ ($ref)}"
 }
 

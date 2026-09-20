@@ -145,7 +145,9 @@ class DashboardApi:
             "/api/scan": self.post_scan,
             "/api/priorities": self.post_priorities,
             "/api/intake": self.post_intake,
-            "/api/sync": self.post_sync,
+            "/api/sync/rebuild": self.post_sync_rebuild,
+            "/api/sync/preview": self.post_sync_preview,
+            "/api/sync/resolve": self.post_sync_resolve,
         }
 
     def dispatch_get(self, path: str, params: dict[str, list[str]]) -> Any:
@@ -164,7 +166,8 @@ class DashboardApi:
         handler = self.get_routes.get(path)
         if handler is None:
             raise ApiError(404, f"no such route: {path}")
-        return handler(params)
+        with self.reader.snapshot():
+            return handler(params)
 
     def dispatch_post(self, path: str, body: dict[str, Any]) -> Any:
         """Route a POST request.
@@ -182,7 +185,8 @@ class DashboardApi:
         handler = self.post_routes.get(path)
         if handler is None:
             raise ApiError(404, f"no such route: {path}")
-        return handler(body)
+        with self.reader.snapshot():
+            return handler(body)
 
     # ------------------------------------------------------------ GET handlers
 
@@ -480,30 +484,33 @@ class DashboardApi:
         return {"file": name, "content": content}
 
     def sync(self, params: dict[str, list[str]]) -> dict[str, Any]:
-        """Sync status. Can take ~15s when the remote is slow.
+        """Sync status plus the conflict copies it knows about.
 
         Args:
             params: Parsed query string.
 
         Returns:
-            {output, enabled}.
+            The `sync status --json` payload plus {conflict_list}.
         """
-        return {
-            "output": self.cli.sync_status(),
-            "enabled": bool(_dig(self.reader.config(redact=False),
-                                 ("sync", "enabled"), False)),
-        }
+        status = self.cli.sync_status_json()
+        if not isinstance(status, dict):
+            status = {}
+        status["conflict_list"] = self.cli.sync_conflicts_json()
+        return status
 
     def config(self, params: dict[str, list[str]]) -> dict[str, Any]:
-        """config.json with credential-shaped values masked.
+        """The merged config, marked with which keys are device-local.
 
         Args:
             params: Parsed query string.
 
         Returns:
-            The redacted config object.
+            The redacted merged config plus {_local_keys}.
         """
-        return self.reader.config(redact=True)
+        cfg = self.reader.config(redact=True)
+        if isinstance(cfg, dict):
+            cfg["_local_keys"] = self.reader.local_config_keys()
+        return cfg
 
     # ----------------------------------------------------------- POST handlers
 
@@ -734,18 +741,94 @@ class DashboardApi:
         output = self.cli.intake(body["source"], body["text"])
         return {"output": output, "files": self.reader.intake_files()}
 
-    def post_sync(self, body: dict[str, Any]) -> dict[str, Any]:
-        """Pull or push the state tree.
+    def post_sync_rebuild(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Rebuild the derived views from the journal.
 
         Args:
-            body: {action: pull|push}. Push is only ever a user click.
+            body: Ignored.
 
         Returns:
             {output}.
         """
-        action = _one_of(body, "action", ("pull", "push"))
-        output = self.cli.sync(action)
-        return {"output": output}
+        return {"output": self.cli.sync_rebuild()}
+
+    # The canonical names say what happens to which file; the pre-M2 spellings
+    # stay accepted so an open page or a saved script keeps working.
+    _RESOLVE_ACTIONS = (
+        "keep-original", "use-conflict-copy", "merge", "keep-local", "keep-remote",
+    )
+
+    def _conflict_path(self, body: dict[str, Any]) -> str:
+        """Validate a conflict path supplied by a client.
+
+        Defense in depth under the shell-side check: the path must sit inside
+        DAVE_HOME, carry the sync-conflict name, and stay out of the areas that
+        are never shared documents.
+
+        Args:
+            body: The request body carrying `file`.
+
+        Returns:
+            The resolved absolute path.
+
+        Raises:
+            ApiError: If the path is outside the allowed document area.
+        """
+        _require(body, "file")
+        conflict = str(body["file"])
+        home = Path(self.dave_home).resolve()
+        path = Path(conflict)
+        if not path.is_absolute():
+            path = home / conflict
+        resolved = path.resolve()
+        if home not in resolved.parents:
+            raise ApiError(400, "file must be inside DAVE_HOME")
+        if ".sync-conflict-" not in resolved.name:
+            raise ApiError(400, "file is not a sync-conflict copy")
+        relative = resolved.relative_to(home)
+        first = relative.parts[0]
+        if first == ".local" or first.startswith(".migrated-"):
+            raise ApiError(400, "file is device-local state, not a shared document")
+        if first == "journal":
+            raise ApiError(400, "journal conflicts are recovered with sync journal-conflicts")
+        return str(resolved)
+
+    def post_sync_preview(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Preview one sync-conflict copy without changing anything.
+
+        Args:
+            body: {file: conflict path}.
+
+        Returns:
+            The preview payload, including the digests a resolve must echo back.
+        """
+        return {"preview": self.cli.sync_conflict_preview(self._conflict_path(body))}
+
+    def post_sync_resolve(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Resolve one sync-conflict copy.
+
+        A destructive choice must carry the digests from its preview, so a file
+        that changed between the preview and the click is not silently acted on.
+
+        Args:
+            body: {file, action, expect, expect_original}.
+
+        Returns:
+            {output, conflict_list}.
+        """
+        resolved = self._conflict_path(body)
+        action = _one_of(body, "action", self._RESOLVE_ACTIONS)
+        expect = body.get("expect")
+        expect_original = body.get("expect_original")
+        if action != "merge" and not expect:
+            raise ApiError(400, "a destructive action requires the preview digest")
+        output = self.cli.sync_resolve(
+            resolved,
+            action,
+            str(expect) if expect else None,
+            str(expect_original) if expect_original else None,
+        )
+        return {"output": output, "conflict_list": self.cli.sync_conflicts_json()}
 
 
 def _dig(obj: dict[str, Any], path: tuple[str, ...], default: Any) -> Any:

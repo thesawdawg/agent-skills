@@ -17,7 +17,8 @@ been touched lately.
 dave.sh project link webcrawler RM-4471
 ```
 
-The ref lives in `projects/<slug>/project.json`, not in the priority line. This is
+The link is recorded as a `project.link` journal event (folded into
+`.local/views/projects.json`), not in the priority line. This is
 deliberate: `priorities.md` is the file the user hand-edits most, and giving it a
 parseable schema would mean every intake has to preserve one. Nothing in the
 project layer parses the user's document.
