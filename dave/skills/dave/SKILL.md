@@ -84,6 +84,25 @@ Write `~/.dave/config.json` from
 [templates/config-template.json](templates/config-template.json), dropping every
 `_comment_*` key. Show it to the user.
 
+Then connect the vault to its transport — this is the step that touches the
+host, so run it in a terminal:
+
+```bash
+scripts/dave.sh sync setup
+```
+
+It walks the Syncthing side end to end: no `syncthing` binary → it names the
+install command for the detected package manager and offers to run it; no
+running daemon → it offers to start one (the systemd user unit where it
+exists, a detached process where it doesn't); then it scrapes the api key
+from the daemon's `config.xml`, offers to register `~/.dave` as folder
+`dave-vault` with fs-watch and staggered versioning, and prints this device's
+id plus the pairing steps for the other machines. Every prompt wants an
+interactive yes — nothing installs, starts, or registers off a tty, and
+`--auto` covers only the folder registration for scripted runs. If the user
+will only ever use one machine this step can be deferred — `.sync.enabled`
+lives in `.local/config.json` and `sync setup` is safe to re-run.
+
 Then run the first intake — an empty priority list makes every later drift check
 meaningless. If the user has nothing to hand over yet, say plainly that the list is
 empty and that drift detection is off until it isn't.
@@ -131,10 +150,12 @@ journal in `journal/<device>.jsonl`, and structured state is folded into views
 under `.local/views/` (device-local, kept out of the synced folder by `.stignore`
 along with the rendered log/parking markdown). `scripts/dave.sh sync setup` writes `.stignore`
 and flips `.sync.enabled` in `.local/config.json`, then walks the Syncthing
-side: it reads the daemon's api key from `config.xml` and offers to register
-the vault as folder `dave-vault` (same Folder ID on both devices is therefore
-automatic) with Staggered File Versioning — `--auto` skips the prompt, and the
-manual GUI checklist is printed as fallback.
+side end to end — installing the daemon with the user when it's missing,
+starting it when it isn't running, scraping the api key from `config.xml`,
+and offering to register the vault as folder `dave-vault` (same Folder ID on
+both devices is therefore automatic) with Staggered File Versioning —
+`--auto` skips the folder prompt, and the manual GUI checklist is printed as
+fallback.
 `config.json` is shared, so per-device settings — `projects.root`,
 `projects.paths` (slug → checkout path), `hooks`, `sync.*` — live in
 `.local/config.json` and override it. `sync status` shows journals, view

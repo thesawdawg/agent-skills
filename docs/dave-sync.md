@@ -68,31 +68,41 @@ rules Syncthing documents.
 
 ### 2. `dave.sh sync setup` (guided)
 
-Run it once per device. It always does the vault-side prep, then walks the
-Syncthing side as far as it can:
+Run it once per device — it is part of first-run setup and safe to re-run. It
+always does the vault-side prep, then walks the Syncthing side as far as it
+can:
 
 1. Writes `.stignore` (`.local/`, `.obsidian/workspace*`, `*.tmp`, `*.swp`,
    `.DS_Store`), ensures `device.json` and `.obsidian/app.json`, and flips
    `.sync.enabled` in `.local/config.json`.
-2. Checks `syncthing` is on PATH — prints distro install instructions when not
-   (override the binary name with `SYNCTHING_BIN`).
+2. Checks `syncthing` is on PATH (override the binary name with
+   `SYNCTHING_BIN`). When it isn't, it names the one install command for the
+   detected package manager (apt, dnf, pacman, zypper) and — on a terminal —
+   offers to run it. Off a terminal it prints the command and the
+   user-service line and stops; nothing non-interactive installs packages.
 3. Finds the API key: `SYNCTHING_API_KEY` / `.local/config.json` first, then
    scrapes `<apikey>` and the GUI address from Syncthing's own `config.xml`
    (`$SYNCTHING_CONFIG`, then `$XDG_CONFIG_HOME/syncthing`,
-   `~/.config/syncthing`, `~/.local/state/syncthing`).
+   `~/.config/syncthing`, `~/.local/state/syncthing`). When the daemon has
+   never run on the host — no `config.xml` — or has a config but isn't
+   answering, setup offers to start it first: the systemd user unit where
+   one exists, a detached `syncthing` process where it doesn't (WSL without
+   systemd), then waits for the GUI to open before continuing.
 4. Asks the daemon for its device id and whether a folder already covers the
    vault.
 5. **Registers `~/.dave` for you** — folder id `dave-vault` (a fixed id, so the
    "same Folder ID on both devices" rule is automatic), filesystem watching
    for instant propagation, staggered versioning. On a terminal it asks first;
-   `dave.sh sync setup --auto` skips the prompt for scripted runs. If the
-   folder exists but lacks versioning it offers to patch that too.
+   `dave.sh sync setup --auto` skips the prompt for scripted runs — but
+   `--auto` only covers this prompt; it never installs or starts anything.
+   If the folder exists but lacks versioning it offers to patch that too.
 6. Saves the discovered key/url to `.local/config.json` (device-local, never
    synced) so `sync status` can report daemon health afterwards.
 7. Prints this device's Syncthing id and the pairing steps below.
 
 Every step degrades to printed instructions — nothing in the guided path is
-required for sync to work; it only saves you a trip to the GUI.
+required for sync to work; it only saves you a trip to the GUI (and, on a
+terminal, a trip to the package manager and `systemctl`).
 
 ### 3. Pairing the devices (once)
 
@@ -149,20 +159,54 @@ when the API is configured. `--json` gives the same thing for the dashboard.
 
 ## Conflicts
 
-Structured state cannot conflict: each device only appends to *its own*
-journal file, so Syncthing never has two writers on one file. Prose can —
-two devices editing `priorities.md` offline produce a
+Structured state rarely conflicts: each device only appends to *its own*
+journal file, so in normal operation Syncthing never has two writers on one
+file. It is not impossible — a cloned device identity, a restored backup, or a
+tree copied by hand can put two writers behind the same journal name. Prose
+conflicts more readily: two devices editing `priorities.md` offline produce a
 `priorities.sync-conflict-<date>-<device>.md` copy next to the original.
 
 ```bash
-dave.sh sync conflicts                 # list copies and what they shadow
-dave.sh sync conflicts resolve <file> keep-local    # drop the copy
-dave.sh sync conflicts resolve <file> keep-remote   # copy replaces the original
+dave.sh sync conflicts                              # list copies and what they shadow
+dave.sh sync conflicts preview <file>               # read-only: the diff and the consequence
+dave.sh sync conflicts resolve <file> keep-original      # drop the copy
+dave.sh sync conflicts resolve <file> use-conflict-copy  # copy replaces the original
 ```
 
+`keep-local` and `keep-remote` remain accepted as aliases for the two canonical
+actions. Both destructive actions copy the bytes they discard into
+`.local/conflict-recovery/` first, so a wrong choice is recoverable. Pass
+`--expect <sha256>` (and `--expect-original <sha256>`) from `preview --json` to
+refuse the action if either file changed since you looked at it; the dashboard
+always does this.
+
+Resolution only ever touches regular files inside the vault and outside
+`.local`, the `.migrated-*` archives, and `journal/`. Symlinked operands are
+refused rather than followed, and the `.sync-conflict-` suffix is parsed in the
+filename alone, so a directory carrying that infix is never rewritten. These
+checks bound what a resolution can name; they are not a guarantee against
+another process changing the files between the check and the action.
+
 There is no automatic merge: with no common ancestor there is nothing safe to
-diff3 against, so `resolve` shows a `diff -u` of the two versions and only the
-`keep-*` actions touch files.
+diff3 against, so `merge` shows a `diff -u` of the two versions and leaves both
+files alone.
+
+### Journal conflicts
+
+A `*.sync-conflict-*` copy of a journal is *not* resolved by keeping one side —
+the discarded file can hold durable events that exist nowhere else. Those copies
+are excluded from ordinary replay and recovered on their own path:
+
+```bash
+dave.sh sync journal-conflicts <file>                  # preview: unique vs duplicate events
+dave.sh sync journal-conflicts <file> --apply <sha256> # import the unique events
+```
+
+Recovery is preservation-first: the source copy is backed up under
+`.local/recovery/`, events are imported under their original identities, and
+replay deduplicates by identity, so repeating an import cannot duplicate
+history. If the two files disagree about the *contents* of the same event
+identity, recovery refuses and keeps both files for manual reconciliation.
 
 ## Migrating from the git-based sync
 

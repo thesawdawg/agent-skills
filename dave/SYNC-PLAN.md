@@ -4,6 +4,10 @@ Status: implemented on feat/dave-journal-sync (M1–M6, 2026-09-19).
 Branch: `feat/dave-journal-sync`. Existing approved plans govern scope; record
 material deviations here.
 
+Follow-up: [sync remediation plan](SYNC-REMEDIATION-PLAN.md) tracks the
+2026-09-19 review findings and UX improvements. It is planned work, not a claim
+that those fixes are implemented; M1–M6 below retain their original history.
+
 ## Deviations (as built vs. as planned)
 
 - **Collision suffixing on ids** (`~<dev>`): the plan left promise/assignment
@@ -39,9 +43,17 @@ material deviations here.
   the local Syncthing daemon, scrapes its api key from `config.xml`, and
   registers the vault as folder `dave-vault` over the REST API — prompted on a
   tty, `--auto` for scripted runs — then persists the credentials to
-  `.local/config.json`. Installing Syncthing and pairing devices remain
-  manual (printed instructions). `sync status` additionally reports the
+  `.local/config.json`. `sync status` additionally reports the
   daemon's device id for pairing.
+- **First-run install/start walkthrough** (user request, post-implementation):
+  the "automated installation is out of scope" line softened — `sync setup`
+  is now part of SKILL.md's first-run flow and walks the host side: it names
+  the install command for the detected package manager (apt/dnf/pacman/
+  zypper) and offers to run it, and when the daemon has never run or isn't
+  answering it offers to start it (systemd user unit, else a detached
+  process) with bounded waits for `config.xml` and the API. All
+  host-changing steps still require a confirmed tty; `--auto` covers only the
+  folder-registration prompt. Device pairing remains manual.
 
 ## Goal
 
