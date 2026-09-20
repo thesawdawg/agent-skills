@@ -398,6 +398,9 @@ class DashboardTests(unittest.TestCase):
     def test_sync_resolve_keep_local(self) -> None:
         """keep-local deletes the conflict copy and keeps the original.
 
+        The destructive action carries the digests from its preview, which is
+        how the dashboard applies a decision the user actually saw.
+
         Returns:
             None.
         """
@@ -407,14 +410,74 @@ class DashboardTests(unittest.TestCase):
         before = original.read_text()
         conflict.write_text('conflicting edit\n')
         try:
+            status, body = self.post('/api/sync/preview', {'file': str(conflict)})
+            self.assertEqual(200, status)
+            preview = body['data']['preview']
+            self.assertIn('conflicting edit', preview['diff'])
+            self.assertIn('deletes', preview['consequences']['keep-original'])
+            self.assertTrue(conflict.exists(), 'preview must not change anything')
+
             status, body = self.post(
                 '/api/sync/resolve',
-                {'file': str(conflict), 'action': 'keep-local'})
+                {'file': str(conflict), 'action': 'keep-local',
+                 'expect': preview['conflict_digest'],
+                 'expect_original': preview['original_digest']})
             self.assertEqual(200, status)
             self.assertFalse(conflict.exists())
             self.assertEqual(before, original.read_text())
         finally:
             conflict.unlink(missing_ok=True)
+
+    def test_sync_resolve_requires_a_fresh_preview(self) -> None:
+        """A destructive action needs a digest, and a stale one is refused.
+
+        Returns:
+            None.
+        """
+        conflict = Path(
+            self.home, 'priorities.sync-conflict-20260919-120000-D4E5F6.md')
+        conflict.write_text('conflicting edit\n')
+        try:
+            status, _ = self.post(
+                '/api/sync/resolve',
+                {'file': str(conflict), 'action': 'keep-original'})
+            self.assertEqual(400, status, 'a missing digest must be refused')
+
+            status, body = self.post('/api/sync/preview', {'file': str(conflict)})
+            self.assertEqual(200, status)
+            digest = body['data']['preview']['conflict_digest']
+            conflict.write_text('changed after the preview\n')
+            status, _ = self.post(
+                '/api/sync/resolve',
+                {'file': str(conflict), 'action': 'keep-original', 'expect': digest})
+            self.assertEqual(500, status, 'a stale digest must not resolve')
+            self.assertTrue(conflict.exists())
+        finally:
+            conflict.unlink(missing_ok=True)
+
+    def test_sync_resolve_refuses_protected_areas(self) -> None:
+        """Journals and device-local state are not generic conflict copies.
+
+        Returns:
+            None.
+        """
+        journal = Path(
+            self.home, 'journal/peer.sync-conflict-20260919-120000-A1.jsonl')
+        journal.write_text('{"ts":"2026-09-19T10:00:00+00:00"}\n')
+        local = Path(
+            self.home, '.local/thing.sync-conflict-20260919-120000-A1.md')
+        local.write_text('local\n')
+        try:
+            for target in (journal, local):
+                status, _ = self.post(
+                    '/api/sync/resolve',
+                    {'file': str(target), 'action': 'keep-original',
+                     'expect': 'x' * 64})
+                self.assertEqual(400, status)
+                self.assertTrue(target.exists())
+        finally:
+            journal.unlink(missing_ok=True)
+            local.unlink(missing_ok=True)
 
     def test_config_is_redacted(self) -> None:
         """Credential-shaped keys are masked in /api/config.

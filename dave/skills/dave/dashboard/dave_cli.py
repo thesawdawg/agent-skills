@@ -223,17 +223,42 @@ class DaveCli:
         """
         return self.run("sync", "rebuild")
 
-    def sync_resolve(self, conflict_file: str, action: str) -> str:
+    def sync_conflict_preview(self, conflict_file: str) -> Any:
+        """Read-only preview of one sync-conflict copy.
+
+        Args:
+            conflict_file: Path of the *.sync-conflict-* file.
+
+        Returns:
+            The `sync conflicts preview --json` payload, including the digests
+            a later resolve must present back.
+        """
+        return self.run_json("sync", "conflicts", "preview", conflict_file, "--json")
+
+    def sync_resolve(
+        self,
+        conflict_file: str,
+        action: str,
+        expect: str | None = None,
+        expect_original: str | None = None,
+    ) -> str:
         """Resolve one sync-conflict copy.
 
         Args:
             conflict_file: Path of the *.sync-conflict-* file.
-            action: keep-local, keep-remote, or merge.
+            action: keep-original, use-conflict-copy, or merge.
+            expect: Digest the conflict copy carried in the preview.
+            expect_original: Digest the original carried in the preview.
 
         Returns:
             The dave.sh output line.
         """
-        return self.run("sync", "conflicts", "resolve", conflict_file, action)
+        args = ["sync", "conflicts", "resolve", conflict_file, action]
+        if expect:
+            args += ["--expect", expect]
+        if expect_original:
+            args += ["--expect-original", expect_original]
+        return self.run(*args)
 
     # ----------------------------------------------------------------- writes
 

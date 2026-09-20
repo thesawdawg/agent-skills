@@ -1170,13 +1170,14 @@ test_sync() {
   assert_eq "status counts the conflict" "1" "$(dave sync status --json | jq .conflicts)"
   assert_exit "a bogus path is refused" 1 dave sync conflicts resolve /etc/passwd keep-local
   assert_exit "a non-conflict name is refused" 1 dave sync conflicts resolve priorities.md keep-local
+  # The legacy spellings stay accepted; they now name the canonical actions.
   out="$(dave sync conflicts resolve "$DAVE_HOME/priorities.sync-conflict-20260919-120000-ABCDEF.md" keep-local)"
-  assert_contains "keep-local reports" "$out" "kept local"
+  assert_contains "keep-local reports" "$out" "kept the original"
   [ ! -f "$DAVE_HOME/priorities.sync-conflict-20260919-120000-ABCDEF.md" ] \
     && ok "keep-local removes the copy" || no "keep-local removes the copy" "still there"
   printf 'remote line\n' > "$DAVE_HOME/priorities.sync-conflict-20260919-120000-ABCDEF.md"
   out="$(dave sync conflicts resolve "$DAVE_HOME/priorities.sync-conflict-20260919-120000-ABCDEF.md" keep-remote)"
-  assert_contains "keep-remote reports" "$out" "kept remote"
+  assert_contains "keep-remote reports" "$out" "used the conflict copy"
   assert_eq "keep-remote replaces the original" "remote line" "$(head -1 "$DAVE_HOME/priorities.md")"
   [ ! -f "$DAVE_HOME/priorities.sync-conflict-20260919-120000-ABCDEF.md" ] \
     && ok "keep-remote removes the copy" || no "keep-remote removes the copy" "still there"
@@ -1640,6 +1641,71 @@ test_views_id_collision() {
   rm -rf "$home_b"
 }
 
+# Conflict resolution is the one place a path arrives from outside, so the
+# allowed document area is asserted directly: what it refuses, what the user is
+# shown before a destructive choice, and what stays recoverable afterwards.
+test_sync_conflict_safety() {
+  dave init >/dev/null
+  local stamp="sync-conflict-20260919-120000-ABC" out
+  printf 'original bytes\n' > "$DAVE_HOME/note.md"
+  printf 'conflict bytes\n' > "$DAVE_HOME/note.$stamp.md"
+
+  # Nothing outside the vault, and no symlink standing in for a document.
+  printf 'outside\n' > "$DAVE_HOME/../escape.$stamp.md"
+  assert_exit "a traversal operand is refused" 1 \
+    dave sync conflicts resolve "../escape.$stamp.md" keep-original
+  [ -f "$DAVE_HOME/../escape.$stamp.md" ] \
+    && ok "the outside file survives" || no "the outside file survives" "deleted"
+  rm -f "$DAVE_HOME/../escape.$stamp.md"
+  ln -s /etc/passwd "$DAVE_HOME/link.$stamp.md"
+  assert_exit "a symlink operand is refused" 1 \
+    dave sync conflicts resolve "link.$stamp.md" keep-original
+
+  # Device-local state and migration archives are not shared documents.
+  printf 'x\n' > "$DAVE_HOME/.local/l.$stamp.md"
+  assert_exit ".local is refused" 1 dave sync conflicts resolve ".local/l.$stamp.md" keep-original
+  mkdir -p "$DAVE_HOME/.migrated-2026"
+  printf 'x\n' > "$DAVE_HOME/.migrated-2026/m.$stamp.md"
+  assert_exit "a migration archive is refused" 1 \
+    dave sync conflicts resolve ".migrated-2026/m.$stamp.md" keep-original
+
+  # Journal history has its own preservation-first recovery path.
+  printf '{"ts":"2026-09-19T10:00:00+00:00"}\n' > "$DAVE_HOME/journal/peer.$stamp.jsonl"
+  out="$(dave sync conflicts resolve "journal/peer.$stamp.jsonl" keep-original 2>&1 || true)"
+  assert_contains "a journal copy is routed to recovery" "$out" "journal-conflicts"
+  [ -f "$DAVE_HOME/journal/peer.$stamp.jsonl" ] \
+    && ok "the journal copy survives" || no "the journal copy survives" "deleted"
+  rm -f "$DAVE_HOME/journal/peer.$stamp.jsonl"
+
+  # A parent directory carrying the infix must not be rewritten.
+  mkdir -p "$DAVE_HOME/proj.$stamp"
+  printf 'x\n' > "$DAVE_HOME/proj.$stamp/a.$stamp.md"
+  assert_eq "only the basename is parsed" "$DAVE_HOME/proj.$stamp/a.md" \
+    "$(dave sync conflicts preview "proj.$stamp/a.$stamp.md" --json | jq -r .original)"
+
+  # The preview is read-only and names the consequence of each choice.
+  out="$(dave sync conflicts preview "note.$stamp.md")"
+  assert_contains "preview shows the removed line" "$out" "-original bytes"
+  assert_contains "preview names the deletion" "$out" "deletes"
+  assert_eq "preview changes nothing" "original bytes" "$(cat "$DAVE_HOME/note.md")"
+
+  # A decision made against bytes that have since changed is refused.
+  local digest; digest="$(dave sync conflicts preview "note.$stamp.md" --json | jq -r .conflict_digest)"
+  printf 'changed after the preview\n' > "$DAVE_HOME/note.$stamp.md"
+  assert_exit "a stale preview is refused" 1 \
+    dave sync conflicts resolve "note.$stamp.md" use-conflict-copy --expect "$digest"
+  [ -f "$DAVE_HOME/note.$stamp.md" ] \
+    && ok "the refused copy survives" || no "the refused copy survives" "deleted"
+
+  # The discarded bytes stay recoverable after a destructive choice.
+  digest="$(dave sync conflicts preview "note.$stamp.md" --json | jq -r .conflict_digest)"
+  out="$(dave sync conflicts resolve "note.$stamp.md" use-conflict-copy --expect "$digest")"
+  assert_eq "use-conflict-copy replaces the original" "changed after the preview" \
+    "$(cat "$DAVE_HOME/note.md")"
+  assert_eq "the replaced bytes are recoverable" "original bytes" \
+    "$(cat "$DAVE_HOME"/.local/conflict-recovery/*-note.md)"
+}
+
 # ----------------------------------------------------------------------- run
 
 command -v jq >/dev/null 2>&1 || { echo "jq is required to run these tests"; exit 1; }
@@ -1656,7 +1722,8 @@ for t in init init_idempotent not_set_up_exits_3 migrate migrate_partial \
          journal_events journal_device \
          views_empty views_truncated_tail views_two_devices views_ordering \
          views_fingerprint views_interleaved views_id_collision \
-         sync sync_guided help; do
+         sync sync_conflict_safety \
+         sync_guided sync_guided_tty_install sync_guided_tty_start help; do
   run_test "$t"
 done
 

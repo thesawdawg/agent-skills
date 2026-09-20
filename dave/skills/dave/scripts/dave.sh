@@ -119,15 +119,27 @@ dave.sh — state layer for D.A.V.E.  (state lives in $DAVE_HOME, default ~/.dav
 
  sync (Syncthing moves the folder; dave.sh never pushes)
   sync setup [--vault P]    prepare the vault (.stignore, device.json, .obsidian),
-      [--auto]              then walk the Syncthing side: finds the daemon, reads
-                            its api key from config.xml, and offers to register
+      [--auto]              then walk the Syncthing side end to end: install
+                            guidance (offers to run the install on a tty),
+                            start the daemon if it isn't running, read its
+                            api key from config.xml, and offer to register
                             $DAVE_HOME as folder 'dave-vault' — asks on a tty,
-                            --auto skips the prompt
+                            --auto skips the folder prompt but never installs
+                            or starts anything
   sync status               journals, view freshness, sync-conflict count  [--json]
   sync conflicts            list *.sync-conflict-* copies and their originals
-  sync conflicts resolve <file> keep-local|keep-remote|merge
-                            keep-* are automatic; merge prints a diff — with no
-                            common ancestor there is nothing to merge against
+  sync conflicts preview <file>
+                            read-only: the diff and what each choice deletes or
+                            replaces, with the digests to apply it  [--json]
+  sync conflicts resolve <file> keep-original|use-conflict-copy|merge
+                            the first two are automatic and keep a recovery copy
+                            under .local; merge prints a diff — with no common
+                            ancestor there is nothing to merge against.
+                            --expect/--expect-original refuse a stale preview.
+                            keep-local/keep-remote remain as aliases
+  sync journal-conflicts <file>
+                            preview, then --apply <sha256>: preserve both sides
+                            and import missing events by identity
   sync rebuild              rebuild the derived views (alias of: rebuild)
 
  dashboard

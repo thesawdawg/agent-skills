@@ -629,32 +629,58 @@ _sync_status() {
 
 # ----------------------------------------------------------------- conflicts
 
-# A conflict file must live under $DAVE_HOME (outside .local), match the
-# *.sync-conflict-* shape, and shadow an existing original. Resolution is the
-# only place a path arrives from outside (the dashboard), so it is checked
-# here once.
+# A conflict file must live under $DAVE_HOME (outside .local and the migration
+# archives), match the *.sync-conflict-* shape, and shadow an existing original.
+# Resolution is the only place a path arrives from outside (the dashboard), so
+# containment is decided here once, against canonicalized paths.
+#
+# Symlink operands are refused rather than followed: a link is not the document
+# the user chose, and following one would move the allowed area. This bounds
+# which files a resolution can name; it is not a promise of immunity to another
+# process racing these checks on the filesystem between validation and action.
 _sync_conflict_orig() {
-  local f="$1"
+  local f="$1" vault dir base orig_base
   case "$f" in /*) ;; *) f="$DAVE_HOME/$f" ;; esac
-  case "$f" in
-    "$LOCAL"/*) return 1 ;;             # device-local is never a conflict copy
-    "$DAVE_HOME"/*) ;;                  # must live inside the vault
+  [ ! -L "$f" ] || return 1
+  vault="$(realpath -e -- "$DAVE_HOME" 2>/dev/null)" || return 1
+  # Resolving the parent (not the file) keeps a missing original describable
+  # while still rejecting a traversal or a symlinked directory.
+  dir="$(realpath -e -- "$(dirname -- "$f")" 2>/dev/null)" || return 1
+  case "$dir" in
+    "$vault"|"$vault"/*) ;;
     *) return 1 ;;
   esac
-  case "$(basename "$f")" in *.sync-conflict-*) ;; *) return 1 ;; esac
-  local orig
-  orig="$(printf '%s' "$f" \
+  case "$dir/" in
+    "$vault"/.local/*) return 1 ;;      # device-local is never a shared document
+    "$vault"/.migrated-*) return 1 ;;   # migration archives are not sync input
+  esac
+  # The suffix is parsed in the basename alone. Stripping a matching segment
+  # from a parent directory would silently retarget the whole operation.
+  base="$(basename -- "$f")"
+  orig_base="$(printf '%s' "$base" \
     | sed 's/\.sync-conflict-[0-9]\{8\}-[0-9]\{6\}\(-[^.]*\)\?//')"
-  [ "$orig" != "$f" ] || return 1
-  printf '%s\t%s\n' "$f" "$orig"
+  [ "$orig_base" != "$base" ] || return 1
+  printf '%s\t%s\n' "$dir/$base" "$dir/$orig_base"
 }
+
+# Journals are append-only history. A generic keep-one-file decision would drop
+# durable events that only exist in the discarded copy, so they are routed to
+# `sync journal-conflicts`, which preserves both sides and imports by identity.
+_sync_conflict_is_journal() {
+  local vault; vault="$(realpath -e -- "$DAVE_HOME" 2>/dev/null)" || return 1
+  case "$1" in "$vault"/journal/*) return 0 ;; esac
+  return 1
+}
+
+_SYNC_RESOLVE_USAGE='usage: sync conflicts resolve <file> keep-original|use-conflict-copy|merge [--expect <sha256> --expect-original <sha256>]'
 
 _sync_conflicts() {
   case "${1:-}" in
     "") _sync_conflicts_list 0 ;;
     --json) _sync_conflicts_list 1 ;;
+    preview) shift; _sync_conflicts_preview "$@" ;;
     resolve) shift; _sync_conflicts_resolve "$@" ;;
-    *) die "usage: sync conflicts [--json] | sync conflicts resolve <file> keep-local|keep-remote|merge" ;;
+    *) die "usage: sync conflicts [--json] | sync conflicts preview <file> [--json] | $_SYNC_RESOLVE_USAGE" ;;
   esac
 }
 
@@ -675,32 +701,133 @@ _sync_conflicts_list() {
   return 0
 }
 
-# keep-local deletes the copy; keep-remote replaces the original with it.
-# merge cannot be automatic: Syncthing gives two divergent files with no
+_sync_digest() { sha256sum -- "$1" | cut -d ' ' -f1; }
+
+# Both operands must be ordinary files the user could have opened. A symlink is
+# refused here as well as at the path check, because either operand may have
+# been replaced since the copy was listed.
+_sync_conflict_operands() { # <file> -> sets F, ORIG
+  local pair
+  pair="$(_sync_conflict_orig "$1")" \
+    || die "resolve: $1 is not a sync-conflict copy under $DAVE_HOME"
+  F="${pair%%$'\t'*}"; ORIG="${pair#*$'\t'}"
+  [ ! -L "$F" ] && [ -f "$F" ] || die "resolve: not a regular file: $F"
+  ! _sync_conflict_is_journal "$F" || die \
+    "resolve: $F is journal history — use: sync journal-conflicts $F"
+}
+
+# Read-only. Names both files, the bytes each choice keeps, and the digests the
+# caller presents back to apply that decision.
+_sync_conflicts_preview() {
+  [ $# -ge 1 ] || die "usage: sync conflicts preview <file> [--json]"
+  local file="$1" as_json=0 F ORIG have_orig=false binary=false truncated=false
+  [ "${2:-}" != --json ] || as_json=1
+  _sync_conflict_operands "$file"
+  [ ! -L "$ORIG" ] && [ -f "$ORIG" ] && have_orig=true
+  grep -Iq . -- "$F" 2>/dev/null || binary=true
+  if [ "$have_orig" = true ] && ! grep -Iq . -- "$ORIG" 2>/dev/null; then binary=true; fi
+
+  local diff_text="" orig_digest="" orig_bytes=0
+  if [ "$have_orig" = true ]; then
+    orig_digest="$(_sync_digest "$ORIG")"
+    orig_bytes="$(wc -c < "$ORIG" | tr -d ' ')"
+  fi
+  if [ "$binary" = true ]; then
+    diff_text="(binary content — not shown)"
+  elif [ "$have_orig" = true ]; then
+    # Bounded so a huge file cannot flood a terminal or a dashboard response.
+    diff_text="$(diff -u -- "$ORIG" "$F" 2>/dev/null | head -c 65536 | head -n 400 || true)"
+    [ "$(diff -u -- "$ORIG" "$F" 2>/dev/null | wc -c)" -le 65536 ] || truncated=true
+    [ -n "$diff_text" ] || diff_text="(identical content)"
+  else
+    diff_text="(no original on this device — the copy would be the only version)"
+  fi
+
+  local keeps drops
+  if [ "$have_orig" = true ]; then
+    keeps="keep-original: keeps the bytes already in $ORIG and deletes $F"
+    drops="use-conflict-copy: replaces $ORIG with the bytes in $F and deletes $F"
+  else
+    keeps="keep-original: deletes $F (no original remains)"
+    drops="use-conflict-copy: creates $ORIG from $F and deletes $F"
+  fi
+
+  if [ "$as_json" -eq 1 ]; then
+    jq -n --arg conflict "$F" --arg original "$ORIG" \
+      --arg conflict_digest "$(_sync_digest "$F")" --arg original_digest "$orig_digest" \
+      --argjson conflict_bytes "$(wc -c < "$F" | tr -d ' ')" --argjson original_bytes "$orig_bytes" \
+      --argjson original_present "$have_orig" --argjson binary "$binary" \
+      --argjson truncated "$truncated" --arg diff "$diff_text" \
+      --arg keep_original "$keeps" --arg use_conflict_copy "$drops" \
+      '{conflict:$conflict, original:$original, original_present:$original_present,
+        conflict_digest:$conflict_digest, original_digest:$original_digest,
+        conflict_bytes:$conflict_bytes, original_bytes:$original_bytes,
+        binary:$binary, truncated:$truncated, diff:$diff,
+        consequences:{"keep-original":$keep_original, "use-conflict-copy":$use_conflict_copy}}'
+    return 0
+  fi
+  printf 'conflict copy: %s\noriginal:      %s\n\n' "$F" "$ORIG"
+  printf 'original (left) against the conflict copy (right):\n%s\n' "$diff_text"
+  [ "$truncated" = false ] || printf '(diff truncated)\n'
+  printf '\n%s\n%s\n' "$keeps" "$drops"
+}
+
+# keep-original deletes the copy; use-conflict-copy replaces the original with
+# it. merge cannot be automatic: Syncthing gives two divergent files with no
 # common ancestor, so it prints the diff and leaves both files alone.
+#
+# A destructive choice made against a preview is only applied while both files
+# still hold the previewed bytes, and the discarded side is copied into
+# .local/conflict-recovery first so an accidental choice stays recoverable.
 _sync_conflicts_resolve() {
-  [ $# -ge 2 ] || die "usage: sync conflicts resolve <file> keep-local|keep-remote|merge"
-  local file="$1" action="$2" pair f orig
-  pair="$(_sync_conflict_orig "$file")" \
-    || die "resolve: $file is not a sync-conflict copy under $DAVE_HOME"
-  f="${pair%%$'\t'*}"; orig="${pair#*$'\t'}"
-  [ -f "$f" ] || die "resolve: no such file: $f"
+  [ $# -ge 2 ] || die "$_SYNC_RESOLVE_USAGE"
+  local file="$1" action="$2" F ORIG expect="" expect_orig="" recovery
+  shift 2
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --expect) expect="${2:-}"; shift 2 ;;
+      --expect-original) expect_orig="${2:-}"; shift 2 ;;
+      *) die "$_SYNC_RESOLVE_USAGE" ;;
+    esac
+  done
+  # Documented compatibility aliases for the pre-M2 spelling.
   case "$action" in
-    keep-local)
-      rm -f "$f"
-      echo "kept local — removed $f"
+    keep-local) action=keep-original ;;
+    keep-remote) action=use-conflict-copy ;;
+  esac
+  _sync_conflict_operands "$file"
+
+  if [ -n "$expect" ] && [ "$(_sync_digest "$F")" != "$expect" ]; then
+    die "resolve: the conflict copy changed since the preview — run: sync conflicts preview $F"
+  fi
+  if [ -n "$expect_orig" ]; then
+    [ ! -L "$ORIG" ] && [ -f "$ORIG" ] && [ "$(_sync_digest "$ORIG")" = "$expect_orig" ] \
+      || die "resolve: the original changed since the preview — run: sync conflicts preview $F"
+  fi
+
+  recovery="$LOCAL/conflict-recovery"
+  case "$action" in
+    keep-original)
+      mkdir -p "$recovery" && cp -p -- "$F" "$recovery/$(_sync_digest "$F")-$(basename -- "$F")"
+      rm -f -- "$F"
+      echo "kept the original — deleted $F (a copy is in $recovery)"
       ;;
-    keep-remote)
-      [ -f "$orig" ] || die "resolve: original is gone: $orig"
-      mv "$f" "$orig"
-      echo "kept remote — $orig now holds the conflict copy's content"
+    use-conflict-copy)
+      mkdir -p "$recovery"
+      if [ ! -L "$ORIG" ] && [ -f "$ORIG" ]; then
+        cp -p -- "$ORIG" "$recovery/$(_sync_digest "$ORIG")-$(basename -- "$ORIG")"
+      elif [ -e "$ORIG" ]; then
+        die "resolve: original is not a regular file: $ORIG"
+      fi
+      mv -f -- "$F" "$ORIG"
+      echo "used the conflict copy — $ORIG now holds its content (the replaced bytes are in $recovery)"
       ;;
     merge)
-      [ -f "$orig" ] || die "resolve: original is gone: $orig"
+      [ ! -L "$ORIG" ] && [ -f "$ORIG" ] || die "resolve: original is gone: $ORIG"
       echo "no common ancestor — diffing original (left) against the conflict copy (right):"
-      diff -u "$orig" "$f" || true
-      echo "edit $orig by hand, then: sync conflicts resolve $f keep-local"
+      diff -u -- "$ORIG" "$F" || true
+      echo "edit $ORIG by hand, then: sync conflicts resolve $F keep-original"
       ;;
-    *) die "resolve: action must be keep-local, keep-remote, or merge" ;;
+    *) die "resolve: action must be keep-original, use-conflict-copy, or merge" ;;
   esac
 }

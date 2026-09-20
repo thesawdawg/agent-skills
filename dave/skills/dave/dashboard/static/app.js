@@ -173,15 +173,33 @@ function wireSyncButtons(root, rerender) {
     b.onclick = async () => {
       const file = b.dataset.conflict;
       const action = b.dataset.action;
-      const verb = action === "keep-local" ? "Keep local" : "Keep remote";
-      const ok = await act("/api/sync/resolve", { file, action }, {
+      const verb = action === "keep-original" ? "Keep original" : "Use conflict copy";
+      // The decision is shown against the bytes as they are right now, and the
+      // digests travel with it so a file that changes in between is refused
+      // rather than resolved against what the user never saw.
+      let preview;
+      try {
+        preview = (await apiPost("/api/sync/preview", { file })).preview;
+      } catch (e) {
+        toast(e.message, true);
+        return;
+      }
+      const consequence = (preview.consequences || {})[action] || "";
+      const diff = preview.binary
+        ? "(binary content — not shown)"
+        : `${preview.diff || ""}${preview.truncated ? "\n(diff truncated)" : ""}`;
+      const ok = await act("/api/sync/resolve", {
+        file,
+        action,
+        expect: preview.conflict_digest,
+        expect_original: preview.original_present ? preview.original_digest : undefined,
+      }, {
         title: `${verb}: ${file.split("/").pop()}`,
-        body: `Runs \`dave.sh sync conflicts resolve ${file} ${action}\` — ` +
-          (action === "keep-local"
-            ? "keeps the file already here and deletes the conflict copy."
-            : "replaces the local file with the conflict copy's content."),
+        body: consequence,
+        // Escaped once and shown verbatim: a diff must not be read as markdown.
+        details: `original (left) against the conflict copy (right):\n${diff}`,
         confirmLabel: verb,
-        danger: action === "keep-remote",
+        danger: action === "use-conflict-copy",
       });
       if (ok) rerender();
     };
@@ -1071,8 +1089,10 @@ async function viewSync(main) {
       <td class="mono">${esc(c.conflict)}</td>
       <td class="mono muted">shadows ${esc(c.original)}</td>
       <td class="nowrap">
-        <button class="btn small" data-conflict="${esc(c.conflict)}" data-action="keep-local">keep local</button>
-        <button class="btn small danger" data-conflict="${esc(c.conflict)}" data-action="keep-remote">keep remote</button>
+        <button class="btn small" data-conflict="${esc(c.conflict)}" data-action="keep-original"
+          aria-label="Keep the original and delete the conflict copy of ${esc(c.original)}">keep original</button>
+        <button class="btn small danger" data-conflict="${esc(c.conflict)}" data-action="use-conflict-copy"
+          aria-label="Replace ${esc(c.original)} with the conflict copy">use conflict copy</button>
       </td>
     </tr>`).join("");
 
@@ -1093,7 +1113,7 @@ async function viewSync(main) {
         ? `<table><tr><th>device</th><th>events</th><th>last event</th></tr>${journalRows}</table>`
         : '<p class="muted">(no journals yet — this device writes its first event on the next command)</p>'}
       <h2 style="margin-top:12px">Conflicts</h2>
-      <p class="help">When two devices edit the same file offline, Syncthing keeps both and names the loser *.sync-conflict-*. keep-local keeps what is already here; keep-remote takes the copy.</p>
+      <p class="help">When two devices edit the same file offline, Syncthing keeps both and names the loser *.sync-conflict-*. Each choice shows the diff first: <span class="mono">keep original</span> deletes the copy; <span class="mono">use conflict copy</span> replaces the original with it. Either way the discarded bytes are kept under <span class="mono">.local/conflict-recovery</span>. Journal conflicts are not resolved here — they are recovered with <span class="mono">dave.sh sync journal-conflicts</span>, which preserves both sides.</p>
       ${conflicts.length
         ? `<table>${conflictRows}</table>`
         : '<p class="muted">(no sync conflicts)</p>'}
