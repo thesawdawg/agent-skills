@@ -1,0 +1,10 @@
+system-one is an original bundle in thesawdawg/agent-skills, MIT licensed with
+the repository (see ../LICENSE).
+
+Its structure and topics are inspired by dbreunig/building-with-jev-skill
+(https://github.com/dbreunig/building-with-jev-skill), which publishes no
+license; no text from that repository is reproduced here. The guidance is
+derived from TypeSafe's public documentation at https://docs.typesafe.ai and
+from the public READMEs of the ollajev and OpenJev projects, each cited in the
+references that use them. Jev and TypeSafe are trademarks of their owners; this
+bundle is not affiliated with or endorsed by TypeSafe AI, ollajev, or OpenJev.

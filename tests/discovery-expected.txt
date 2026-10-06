@@ -15,5 +15,6 @@ memory
 ollama-delegate
 pr-grill-me
 rest-graphql-debug
+system-one
 web-pentest
 workflow-rules

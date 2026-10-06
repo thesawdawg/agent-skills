@@ -42,6 +42,7 @@ describes the CLI's opt-in skill-use workflow; it is separate from installation.
 | [ollama-delegate](ollama-delegate/SKILL.md) | Text-only Ollama invocation and bounded conversation mechanics. |
 | [pr-grill-me](pr-grill-me/SKILL.md) | Author interview checked against the actual PR diff. |
 | [rest-graphql-debug](rest-graphql-debug/SKILL.md) | Layered HTTP/GraphQL diagnosis and focused lookup recipes. |
+| [system-one](system-one/SKILL.md) | Design and test System One (Jev or local wire-compatible) questions; curl/jq helper for `/v1/systemone`. |
 | [web-pentest](web-pentest/SKILL.md) | Explicitly authorized, scoped security assessment with protected evidence. |
 | [workflow-rules](workflow-rules/SKILL.md) | Advisory workflow conventions and on-demand coding style. |
 
