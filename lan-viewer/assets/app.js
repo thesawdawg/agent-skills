@@ -1,7 +1,8 @@
 (() => {
 'use strict';
 const $ = (id) => document.getElementById(id);
-const state = { docs: [], version: '', current: null, text: new Map(), mermaidReady: null, seq: 0 };
+const state = { docs: [], version: '', current: null, text: new Map(), mermaidReady: null, seq: 0, nav: 0 };
+const HIGHLIGHT_LIMIT = 500000;
 const THEMES = ['auto', 'light', 'dark'];
 const CODE_LANG = { py: 'python', js: 'javascript', mjs: 'javascript', ts: 'typescript', tsx: 'typescript',
   jsx: 'javascript', sh: 'bash', rb: 'ruby', rs: 'rust', yml: 'yaml', patch: 'diff', html: 'xml', log: 'plaintext', txt: 'plaintext' };
@@ -74,6 +75,7 @@ function enableSorting(root) {
 
 function markdownHtml(text) {
   const renderer = new marked.Renderer();
+  const used = new Map();
   renderer.html = (token) => esc(token.text || token.raw || '');
   renderer.code = ({ text: code, lang }) => {
     const name = (lang || '').split(/\s/)[0];
@@ -82,7 +84,9 @@ function markdownHtml(text) {
   };
   renderer.heading = function ({ tokens, depth }) {
     const inner = this.parser.parseInline(tokens);
-    return `<h${depth} id="${esc(slug(inner))}">${inner}</h${depth}>`;
+    const base = `h-${slug(inner) || 'section'}`, n = used.get(base) || 0;
+    used.set(base, n + 1);
+    return `<h${depth} id="${esc(n ? `${base}-${n}` : base)}">${inner}</h${depth}>`;
   };
   return marked.parse(text, { renderer, gfm: true, breaks: false });
 }
@@ -173,7 +177,7 @@ function buildToc(root) {
   heads.forEach((h) => observer.observe(h));
 }
 
-async function renderDoc(meta, text) {
+async function renderDoc(meta, text, stale = () => false) {
   const root = $('doc'), ext = meta.ext;
   let html;
   if (['md', 'markdown'].includes(ext)) html = markdownHtml(text);
@@ -182,9 +186,11 @@ async function renderDoc(meta, text) {
   else {
     let body = text, lang = CODE_LANG[ext] || ext;
     if (ext === 'json') { try { body = JSON.stringify(JSON.parse(text), null, 2); } catch { /* show raw */ } }
-    html = `<pre><code class="hljs">${highlight(body, lang)}</code></pre>`;
+    const big = body.length > HIGHLIGHT_LIMIT;
+    html = `<pre><code class="hljs">${big ? esc(body) : highlight(body, lang)}</code></pre>`;
   }
   const heading = ['md', 'markdown'].includes(ext) ? '' : `<h1>${esc(meta.name)}</h1>`;
+  if (stale()) return;
   root.innerHTML = heading + html;
   upgradeCallouts(root); sanitizeLinks(root); addCopyButtons(root); enableSorting(root); buildToc(root);
   await renderMermaid(root);
@@ -197,11 +203,14 @@ async function show(id, anchor, keepScroll) {
   document.title = `${meta.name} · ${state.title}`;
   document.querySelectorAll('#docs a').forEach((a) => a.toggleAttribute('aria-current', +a.dataset.id === meta.id));
   document.querySelectorAll('#docs a[aria-current]').forEach((a) => a.setAttribute('aria-current', 'page'));
-  const y = window.scrollY;
+  const y = window.scrollY, mine = ++state.nav;
   try {
-    const text = await fetchText(meta.id); state.text.set(meta.id, text.toLowerCase());
-    await renderDoc(meta, text);
-  } catch (e) { $('doc').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+    const text = await fetchText(meta.id);
+    if (mine !== state.nav) return;  // a newer navigation superseded this one
+    state.text.set(meta.id, text.toLowerCase());
+    await renderDoc(meta, text, () => mine !== state.nav);
+  } catch (e) { if (mine === state.nav) $('doc').innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+  if (mine !== state.nav) return;
   document.body.classList.remove('nav-open');
   if (keepScroll) window.scrollTo(0, y);
   else if (anchor) document.getElementById(anchor)?.scrollIntoView();
@@ -210,7 +219,9 @@ async function show(id, anchor, keepScroll) {
 
 function route(keepScroll = false) {
   const [id, anchor] = location.hash.slice(1).split('/');
-  return show(id === '' || id === undefined ? (state.current ?? 0) : +id, anchor ? decodeURIComponent(anchor) : '', keepScroll);
+  let target = '';
+  try { target = anchor ? decodeURIComponent(anchor) : ''; } catch { /* malformed escape: ignore the anchor */ }
+  return show(id === '' || id === undefined ? (state.current ?? 0) : +id, target, keepScroll);
 }
 
 function renderList() {
@@ -232,9 +243,12 @@ let loadedAll = false;
 async function searchAll() {
   if (loadedAll) return;
   loadedAll = true;
-  await Promise.all(state.docs.filter((d) => !state.text.has(d.id)).map(async (d) => {
-    try { state.text.set(d.id, (await fetchText(d.id)).toLowerCase()); } catch { /* skip */ }
-  }));
+  const pending = state.docs.filter((d) => !state.text.has(d.id));
+  for (let i = 0; i < pending.length; i += 6) {  // small batches: friendly to phones and the server
+    await Promise.all(pending.slice(i, i + 6).map(async (d) => {
+      try { state.text.set(d.id, (await fetchText(d.id)).toLowerCase()); } catch { /* skip */ }
+    }));
+  }
 }
 
 async function loadListing() {
@@ -251,8 +265,10 @@ async function poll() {
     if (version !== state.version) {
       await loadListing(); state.text.clear(); loadedAll = false;
       await route(true);
+      if ($('filter').value.trim()) { await searchAll(); renderList(); }
     }
   } catch { $('live').classList.add('off'); }
+  setTimeout(poll, 2000);  // reschedule after finishing so polls never overlap
 }
 
 async function init() {
@@ -269,7 +285,7 @@ async function init() {
   addEventListener('hashchange', () => route());
   try { await loadListing(); } catch (e) { $('doc').innerHTML = `<p class="err">${esc(e.message)}. Open the full URL, including ?t=…, printed by viewer.py.</p>`; return; }
   await route();
-  setInterval(poll, 2000);
+  setTimeout(poll, 2000);
 }
 init();
 })();

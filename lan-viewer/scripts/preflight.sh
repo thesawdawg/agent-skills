@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 command -v python3 >/dev/null || { echo "Missing required executable: python3" >&2; exit 3; }
+python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' || { echo "lan-viewer needs Python 3.9+" >&2; exit 3; }
 dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 for asset in index.html app.js style.css vendor/marked.umd.js vendor/highlight.min.js vendor/mermaid.min.js; do
   [ -f "$dir/../assets/$asset" ] || { echo "Missing asset: $asset" >&2; exit 3; }
