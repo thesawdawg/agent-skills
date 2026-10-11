@@ -38,6 +38,7 @@ describes the CLI's opt-in skill-use workflow; it is separate from installation.
 | [dogfood](dogfood/SKILL.md) | Evidence-backed browser QA and optional simulated persona UX. |
 | [flask-tests](flask-tests/SKILL.md) | Legacy application-specific fixtures; use only after confirming the owning app. |
 | [ideator](ideator/SKILL.md) | New-project scope and a concise project brief. |
+| [lan-viewer](lan-viewer/SKILL.md) | Serve docs, code, diffs, CSV/JSON, and Mermaid diagrams as a themed, live-reloading page on localhost or opt-in LAN. |
 | [memory](memory/SKILL.md) | Optional durable memory, reusing the configured system. |
 | [ollama-delegate](ollama-delegate/SKILL.md) | Text-only Ollama invocation and bounded conversation mechanics. |
 | [pr-grill-me](pr-grill-me/SKILL.md) | Author interview checked against the actual PR diff. |

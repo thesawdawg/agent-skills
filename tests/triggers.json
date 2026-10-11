@@ -10,5 +10,7 @@
   {"prompt":"What is 7 times 8?","expected":[],"avoid":["dave","workflow-rules"]},
   {"prompt":"Add a test to this unrelated Django application.","expected":[],"avoid":["flask-tests"]},
   {"prompt":"Write Choice and Score questions for Jev to triage support tickets.","expected":["system-one"],"avoid":["ollama-delegate","rest-graphql-debug"]},
-  {"prompt":"Call my local ollajev server from the shell and check its answers.","expected":["system-one"],"avoid":["ollama-delegate"]}
+  {"prompt":"Call my local ollajev server from the shell and check its answers.","expected":["system-one"],"avoid":["ollama-delegate"]},
+  {"prompt":"Show this plan and the CSV results as a nice web page I can open from my phone on the same Wi-Fi.","expected":["lan-viewer"],"avoid":["cloudflare-temporary-deploy"]},
+  {"prompt":"Publish this page to a public URL anyone can open.","expected":["cloudflare-temporary-deploy"],"avoid":["lan-viewer"]}
 ]

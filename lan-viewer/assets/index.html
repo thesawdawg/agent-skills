@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Document viewer</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header id="bar">
+  <button id="menu" aria-label="Toggle document list">☰</button>
+  <h1 id="title">Document viewer</h1>
+  <span id="live" title="Live reload status">●</span>
+  <button id="theme" aria-label="Switch theme">Auto</button>
+</header>
+<nav id="side" aria-label="Documents">
+  <input id="filter" type="search" placeholder="Search names and contents…" aria-label="Search documents">
+  <ul id="docs"></ul>
+</nav>
+<main id="main" tabindex="-1"><article id="doc" class="doc">Loading…</article></main>
+<aside id="toc" aria-label="On this page"></aside>
+<script src="/vendor/marked.umd.js"></script>
+<script src="/vendor/highlight.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

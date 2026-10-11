@@ -11,6 +11,7 @@ dependabot-validator
 dogfood
 flask-tests
 ideator
+lan-viewer
 memory
 ollama-delegate
 pr-grill-me
